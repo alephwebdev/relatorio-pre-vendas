@@ -73,3 +73,57 @@ service cloud.firestore {
 - O app usa os builds `compat` do Firebase para simplicidade. Em projetos maiores, prefira os módulos com tree-shaking.
 - IDs são públicos; para produção, considere autenticação adequada.
 - Evite commitar `firebase-config.js` ao repositório.
+
+## Integração PipeRun via n8n (Recomendado)
+
+A integração com PipeRun agora usa n8n como intermediário, eliminando problemas de CORS e centralizando a automação.
+
+### Setup Rápido
+
+1. **Configure o n8n:**
+   ```bash
+   # Importe o workflow
+   cat n8n-workflow.json
+   ```
+
+2. **Configure a URL do webhook:**
+   ```javascript
+   // Edite n8n-config.js
+   window.N8N_CONFIG = {
+     webhookUrl: 'https://seu-n8n.com/webhook/piperun-report'
+   };
+   ```
+
+3. **Teste a integração:**
+   - Abra o app
+   - Clique em "Testar API"
+   - Verifique se os dados chegam do PipeRun
+
+### Documentação Completa
+Consulte [INTEGRACAO_N8N.md](./INTEGRACAO_N8N.md) para instruções detalhadas.
+
+## Integração PipeRun sem CORS (Proxy Local - Alternativa)
+
+Se não quiser usar n8n, ainda há o proxy Node que faz as chamadas do lado do servidor e expõe endpoints locais.
+
+Passos:
+
+1. Instalar dependências
+
+  ```powershell
+  npm install
+  ```
+
+2. (Opcional) Criar `.env` a partir de `.env.example` para ajustar Token/Funil/Etapa/Porta.
+
+3. Iniciar o proxy
+
+  ```powershell
+  npm run start:proxy
+  ```
+
+  O proxy roda em `http://localhost:4000`.
+
+4. Abrir `index.html` (Live Server ou similar) e usar “Testar API”/“Gerar Relatório”.
+
+Se o proxy não estiver ativo, a aplicação mostrará: “Proxy local indisponível. Inicie o servidor com npm run start:proxy”.

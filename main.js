@@ -5,58 +5,53 @@
     date: todayISO(),
     startTime: '08:00',
     endTime: '18:00',
-    groups: [
-      // Default groups and items (can be edited/removed)
-      {
-        id: uid(),
-        name: 'Geral',
-        items: [
-          { id: uid(), name: 'Total de Atendimentos', value: 0 },
-          { id: uid(), name: 'Qualificados', value: 0 },
-          { id: uid(), name: 'Leads em tentativas de contato', value: 0 },
-          { id: uid(), name: 'Perdidos', value: 0 },
-          { id: uid(), name: 'Duplicado', value: 0 },
-          { id: uid(), name: 'CARDS NO MQL', value: 0 }
-        ]
-      },
-      {
-        id: uid(),
-        name: 'Produtos / Interesses',
-        items: [
-          { id: uid(), name: 'Placas Drywall', value: 0 },
-          { id: uid(), name: 'Perfis Drywall', value: 0 },
-          { id: uid(), name: 'Glasroc X', value: 0 },
-          { id: uid(), name: 'Painel wall', value: 0 },
-          { id: uid(), name: 'Placa Cimentícia', value: 0 },
-          { id: uid(), name: 'Perfis de Steel Frame', value: 0 },
-          { id: uid(), name: 'Steel Frame Obras', value: 0 },
-          { id: uid(), name: 'Quartzolit', value: 0 },
-          { id: uid(), name: 'Acústica', value: 0 },
-          { id: uid(), name: 'Piso Vinílico', value: 0 },
-          { id: uid(), name: 'MEGA SALDÃO DE FORROS', value: 0 },
-          { id: uid(), name: 'TOTAL STEEL FRAME PRODUTOS', value: 0 }
-        ]
-      }
+    groups: [], // mantém compatibilidade mas não usado
+    products: [
+      // Produtos/Interesses padrão
+      { id: uid(), name: 'Placas Drywall', value: 0 },
+      { id: uid(), name: 'Perfis Drywall', value: 0 },
+      { id: uid(), name: 'Glasroc X', value: 0 },
+      { id: uid(), name: 'Painel wall', value: 0 },
+      { id: uid(), name: 'Placa Cimentícia', value: 0 },
+      { id: uid(), name: 'Perfis de Steel Frame', value: 0 },
+      { id: uid(), name: 'Steel Frame Obras', value: 0 },
+      { id: uid(), name: 'Quartzolit', value: 0 },
+      { id: uid(), name: 'Acústica', value: 0 },
+      { id: uid(), name: 'Piso Vinílico', value: 0 },
+      { id: uid(), name: 'MEGA SALDÃO DE FORROS', value: 0 },
+      { id: uid(), name: 'TOTAL STEEL FRAME PRODUTOS', value: 0 }
     ],
-    lossReasons: [
-      '- Produto que não Trabalhamos',
-      '- Cliente longe da loja mais próxima',
-      '- Cliente informou não ter mais interesse',
-      '- Sem informações para contato'
-    ],
+    pipeRunData: {
+      totalAtendimentos: 0,
+      qualificados: 0,
+      perdidos: 0,
+      tentativasContato: 0,
+      duplicados: 0,
+      cardsMql: 0,
+      motivoPerda: '- Aguardando dados do PipeRun'
+    },
+    pipeRunConfig: {
+      apiKey: '6cc7a96c25ac9a34a84d4219e23aab20',
+      baseUrl: 'https://app.pipe.run/webservice/integracao', // URL base inicial
+      funnelId: '45772',
+      stageId: '262331'
+    },
     accountsCache: [] // fetched list for report selection
   };
 
   // ---- Firebase Init ----
   const cfg = window.FIREBASE_CONFIG || {};
   let app, db;
+  console.log('🔥 Firebase config:', cfg);
+  console.log('🔥 Firebase SDK loaded:', !!window.firebase);
   try{
     if(!window.firebase) throw new Error('SDK do Firebase não carregou. Verifique sua conexão.');
     if(!cfg || !cfg.projectId) throw new Error('Configuração do Firebase ausente. Crie firebase-config.js baseado em firebase-config.sample.js');
     app = firebase.initializeApp(cfg);
     db = firebase.firestore();
+    console.log('✅ Firebase inicializado com sucesso');
   }catch(err){
-    console.error(err);
+    console.error('❌ Erro ao inicializar Firebase:', err);
     // Degrade: mostra erro e bloqueia login
     window.addEventListener('DOMContentLoaded', ()=>{
       const errEl = document.querySelector('#login-error');
@@ -87,29 +82,29 @@
 
   const accountNameEl = qs('#account-name');
   const accountIdEl = qs('#account-id');
+  const currentDayEl = qs('#current-day');
   const dateInput = qs('#date');
   const startTimeInput = qs('#start-time');
   const endTimeInput = qs('#end-time');
-  const addGroupBtn = qs('#add-group-btn');
   const generateReportBtn = qs('#generate-report-btn');
   const historyBtn = qs('#history-btn');
   const saveIndicator = qs('#save-indicator');
-  const groupsWrapper = qs('#groups-wrapper');
-  const groupsColLeft = qs('#groups-col-left');
-  const groupsColRight = qs('#groups-col-right');
-  const lossReasonsTextarea = qs('#loss-reasons');
-  const reportOutput = qs('#report-output');
-  const copyReportBtn = qs('#copy-report-btn');
-  const whatsappLink = qs('#whatsapp-link');
+  const productsGrid = qs('#products-grid');
+  const productsCount = qs('#products-count');
+  
+  // Modal elements
+  const reportOutput = null; // Removido da interface
+  const copyReportBtn = null; // Removido da interface  
+  const whatsappLink = null; // Removido da interface
   const logoutBtn = qs('#logout-btn');
 
-  const reportModal = qs('#report-modal');
+  const reportModal = new bootstrap.Modal(qs('#report-modal'));
   const reportDate = qs('#report-date');
   const sumSelected = qs('#sum-selected');
   const accountsList = qs('#accounts-list');
   const runReportBtn = qs('#run-report-btn');
 
-  const historyModal = qs('#history-modal');
+  const historyModal = new bootstrap.Modal(qs('#history-modal'));
   const histStart = qs('#hist-start');
   const histEnd = qs('#hist-end');
   const histSumPeriod = qs('#hist-sum-period');
@@ -118,12 +113,12 @@
   const historyResults = qs('#history-results');
 
   const structureBtn = qs('#structure-btn');
-  const structureModal = qs('#structure-modal');
+  const structureModal = new bootstrap.Modal(qs('#structure-modal'));
   const structureEditor = qs('#structure-editor');
-  const addGroupStructBtn = qs('#add-group-struct');
+  const addProductStructBtn = qs('#add-product-struct');
   const saveStructureBtn = qs('#save-structure-btn');
 
-  const finalReportModal = qs('#final-report-modal');
+  const finalReportModal = new bootstrap.Modal(qs('#final-report-modal'));
   const finalReportText = qs('#final-report-text');
   const copyFinalReportBtn = qs('#copy-final-report-btn');
   const whatsappFinalLink = qs('#whatsapp-final-link');
@@ -134,6 +129,89 @@
   function uid(){ return Math.random().toString(36).slice(2,9); }
   function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
   function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+
+  // ---- Sistema de Notificações ----
+  const toastContainer = qs('#toast-container');
+  
+  function showToast(message, type = 'info', duration = 3000) {
+    const toastId = `toast-${uid()}`;
+    const icons = {
+      success: 'bi-check-circle-fill',
+      info: 'bi-info-circle-fill',
+      warning: 'bi-exclamation-triangle-fill',
+      error: 'bi-x-circle-fill'
+    };
+    
+    const titles = {
+      success: 'Sucesso',
+      info: 'Informação',
+      warning: 'Atenção',
+      error: 'Erro'
+    };
+    
+    const toastHTML = `
+      <div id="${toastId}" class="toast custom-toast toast-${type}" role="alert">
+        <div class="toast-header">
+          <i class="bi ${icons[type]} toast-icon ${type}"></i>
+          <strong class="me-auto">${titles[type]}</strong>
+          <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">
+          ${message}
+        </div>
+      </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHTML);
+    
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement, {
+      autohide: true,
+      delay: duration
+    });
+    
+    // Remover o elemento do DOM após esconder
+    toastElement.addEventListener('hidden.bs.toast', () => {
+      toastElement.remove();
+    });
+    
+    toast.show();
+    return toast;
+  }
+  
+  // Funções de conveniência
+  function showSuccess(message, duration = 3000) {
+    return showToast(message, 'success', duration);
+  }
+  
+  function showInfo(message, duration = 3000) {
+    return showToast(message, 'info', duration);
+  }
+  
+  function showWarning(message, duration = 4000) {
+    return showToast(message, 'warning', duration);
+  }
+  
+  function showError(message, duration = 5000) {
+    return showToast(message, 'error', duration);
+  }
+
+  // Função para definir horários automáticos baseado no dia da semana
+  function getWorkingHours(date) {
+    const d = new Date(date + 'T00:00:00');
+    const dayOfWeek = d.getDay(); // 0 = domingo, 1 = segunda, ..., 6 = sábado
+    
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      // Segunda a sexta: 8:00 às 18:00
+      return { start: '08:00', end: '18:00' };
+    } else if (dayOfWeek === 6) {
+      // Sábado: 8:00 às 12:00
+      return { start: '08:00', end: '12:00' };
+    } else {
+      // Domingo: sem horário padrão, manter atual
+      return { start: '08:00', end: '18:00' };
+    }
+  }
 
   // Loading functions
   function showLoading(message = 'Carregando...') {
@@ -188,26 +266,99 @@
     dateInput.value = state.date;
     startTimeInput.value = state.startTime;
     endTimeInput.value = state.endTime;
-    lossReasonsTextarea.value = state.lossReasons.join('\n');
 
-    groupsColLeft.innerHTML = '';
-    groupsColRight.innerHTML = '';
-    // Try to place 'Geral' on left and 'Produtos / Interesses' on right
-    const leftFirst = state.groups.find(g => g.name.toLowerCase().includes('geral'));
-    const rightFirst = state.groups.find(g => g.name.toLowerCase().includes('produtos') || g.name.toLowerCase().includes('interesse'));
-    const placed = new Set();
-    if(leftFirst){ groupsColLeft.appendChild(renderGroup(leftFirst)); placed.add(leftFirst.id); }
-    if(rightFirst && rightFirst.id !== leftFirst?.id){ groupsColRight.appendChild(renderGroup(rightFirst)); placed.add(rightFirst.id); }
-    // Add remaining, balancing by count
-    state.groups.forEach(g => {
-      if(placed.has(g.id)) return;
-      const leftCount = groupsColLeft.childElementCount;
-      const rightCount = groupsColRight.childElementCount;
-      (leftCount <= rightCount ? groupsColLeft : groupsColRight).appendChild(renderGroup(g));
+    renderProducts();
+
+    // Atualizar informações do usuário
+    accountNameEl.textContent = state.account?.name || '';
+    accountIdEl.textContent = state.account ? `ID: ${state.account.id}` : '';
+    
+    // Adicionar o dia da semana atual
+    if (currentDayEl) {
+      const weekdays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+      const today = new Date();
+      currentDayEl.textContent = weekdays[today.getDay()];
+      
+      // Destacar se for fim de semana
+      if (today.getDay() === 0 || today.getDay() === 6) {
+        currentDayEl.classList.add('weekend');
+      } else {
+        currentDayEl.classList.remove('weekend');
+      }
+    }
+  }
+
+  function renderProducts(){
+    productsGrid.innerHTML = '';
+    
+    // Atualizar contador de produtos
+    if (productsCount) {
+      const count = state.products.length;
+      productsCount.textContent = `${count} produto${count !== 1 ? 's' : ''}`;
+    }
+    
+    // Renderizar produtos em layout horizontal simplificado
+    state.products.forEach((product, index) => {
+      const productCard = document.createElement('div');
+      productCard.className = 'product-item';
+      productCard.innerHTML = `
+        <div class="product-card-inline">
+          <div class="product-info">
+            <h6 class="product-name">${escapeHtml(product.name)}</h6>
+          </div>
+          <div class="product-controls-inline">
+            <button class="btn btn-outline-secondary btn-control decr-product" data-product-id="${product.id}" title="Diminuir">
+              <i class="bi bi-dash"></i>
+            </button>
+            <input type="number" class="form-control product-value-inline" 
+                   value="${product.value}" min="0" data-product-id="${product.id}">
+            <button class="btn btn-outline-secondary btn-control incr-product" data-product-id="${product.id}" title="Aumentar">
+              <i class="bi bi-plus"></i>
+            </button>
+          </div>
+        </div>
+      `;
+      productsGrid.appendChild(productCard);
     });
 
-    accountNameEl.textContent = state.account?.name || '';
-    accountIdEl.textContent = state.account ? `(#${state.account.id})` : '';
+    // Adicionar event listeners
+    productsGrid.addEventListener('click', handleProductActions);
+    productsGrid.addEventListener('input', handleProductValueChange);
+  }
+
+  function handleProductActions(e) {
+    const productId = e.target.closest('[data-product-id]')?.dataset.productId;
+    if (!productId) return;
+
+    const product = state.products.find(p => p.id === productId);
+    if (!product) return;
+
+    if (e.target.closest('.incr-product')) {
+      product.value += 1;
+      saveDailyDebounced();
+      renderProducts();
+    } else if (e.target.closest('.decr-product')) {
+      product.value = Math.max(0, product.value - 1);
+      saveDailyDebounced();
+      renderProducts();
+    } else if (e.target.closest('.remove-product')) {
+      if (confirm(`Tem certeza que deseja remover "${product.name}"?`)) {
+        state.products = state.products.filter(p => p.id !== productId);
+        saveDailyDebounced();
+        renderProducts();
+      }
+    }
+  }
+
+  function handleProductValueChange(e) {
+    if (!e.target.classList.contains('product-value-inline')) return;
+    
+    const productId = e.target.dataset.productId;
+    const product = state.products.find(p => p.id === productId);
+    if (!product) return;
+
+    product.value = Math.max(0, parseInt(e.target.value) || 0);
+    saveDailyDebounced();
   }
 
   function renderGroup(group){
@@ -275,12 +426,14 @@
       const next = (Number(valueInput.value||0) + 1);
       item.value = next; valueInput.value = String(next);
       saveDailyDebounced(); updateReportPreviewCurrent();
+      showInfo(`${item.name}: ${next}`, 1500);
     });
     qs('.decr', row).addEventListener('click', (e)=>{
       e.preventDefault();
       const next = Math.max(0, Number(valueInput.value||0) - 1);
       item.value = next; valueInput.value = String(next);
       saveDailyDebounced(); updateReportPreviewCurrent();
+      showInfo(`${item.name}: ${next}`, 1500);
     });
     valueInput.addEventListener('input', (e)=>{
       const n = Math.max(0, parseInt(e.target.value||'0',10) || 0);
@@ -294,6 +447,223 @@
   }
 
   function escapeHtml(s){ return s.replace(/[&<>\"]+/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]||c)); }
+
+  // ---- PipeRun Integration (via n8n webhook) ----
+  const N8N_WEBHOOK_URL = window.N8N_CONFIG?.webhookUrl || 'https://n8n.unitycompany.com.br/webhook/report/today';
+  const N8N_TIMEOUT = window.N8N_CONFIG?.timeout || 15000;
+  
+  // Teste simples chamando o n8n
+  async function testPipeRunConnectivity() {
+    console.log('Testando conectividade via n8n webhook...');
+    console.log('URL configurada:', N8N_WEBHOOK_URL);
+    
+    try {
+      // Fazer um teste simples com dados mínimos
+      const testPayload = {
+        date: new Date().toISOString().split('T')[0],
+        account_id: state.account?.id || 'test'
+      };
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), N8N_TIMEOUT);
+      
+      const resp = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testPayload),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!resp.ok) throw new Error(`n8n respondeu ${resp.status}: ${resp.statusText}`);
+      const data = await resp.json();
+      console.log('n8n OK:', data);
+      return 'n8n';
+    } catch (e) {
+      console.log('Falha no webhook n8n:', e.message);
+      if (e.name === 'AbortError') {
+        throw new Error(`Timeout após ${N8N_TIMEOUT}ms. Verifique se o n8n está ativo.`);
+      }
+      throw new Error('Webhook n8n indisponível. Verifique a URL e se o workflow está ativo.');
+    }
+  }
+
+  async function fetchPipeRunData() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      console.log('🔄 Buscando dados do PipeRun via n8n para:', today);
+      
+      // Payload exato para o n8n
+      const payload = {
+        date: today,
+        account_id: state.account?.id || 'unknown'
+      };
+      
+      console.log('📤 Enviando requisição para n8n:', payload);
+      console.log('📍 URL:', N8N_WEBHOOK_URL);
+      
+      // Fazer requisição para o webhook do n8n
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`n8n webhook falhou: ${response.status} - ${response.statusText}`);
+      }
+      
+      const rawResult = await response.json();
+      console.log('📥 Resposta completa do n8n:', JSON.stringify(rawResult, null, 2));
+      
+      // O n8n retorna um array, pegar o primeiro item
+      const data = Array.isArray(rawResult) ? rawResult[0] : rawResult;
+      
+      if (!data) {
+        throw new Error('n8n retornou dados vazios ou em formato inesperado');
+      }
+      
+      console.log('📊 Dados extraídos do array:', JSON.stringify(data, null, 2));
+      
+      // Validar estrutura dos dados recebidos (nova estrutura)
+      if (typeof data.total_atendimentos !== 'number') {
+        console.warn('⚠️ Estrutura de dados inesperada:', data);
+        throw new Error('Dados do n8n não contêm estrutura esperada (total_atendimentos)');
+      }
+      
+      // Converter estrutura do n8n para nossa estrutura interna
+      const convertedData = convertN8nToPipeRunData(data);
+      
+      // Atualizar state com dados convertidos
+      state.pipeRunData = convertedData;
+      
+      console.log('✅ Dados do PipeRun atualizados via n8n!');
+      console.log('📈 Resumo:', {
+        atendimentos: convertedData.totalAtendimentos,
+        mql: convertedData.cardsMql,
+        perdidos: convertedData.perdidos,
+        duplicados: convertedData.duplicados,
+        tentativas: convertedData.tentativasContato
+      });
+      
+      showSuccess('Dados do PipeRun atualizados com sucesso!', 3000);
+      
+    } catch (error) {
+      console.error('❌ Erro ao buscar dados via n8n:', error);
+      
+      // Mostrar dados de exemplo em caso de erro para teste
+      const exemploData = {
+        totalAtendimentos: 0,
+        qualificados: 0,
+        perdidos: 0,
+        tentativasContato: 0,
+        duplicados: 0,
+        cardsMql: 0,
+        motivoPerda: '- Erro ao conectar com n8n'
+      };
+      
+      state.pipeRunData = exemploData;
+      console.log('📊 Usando dados zerados devido ao erro:', exemploData);
+      
+      const errorDetails = [
+        'Detalhes do erro:',
+        error.message,
+        '',
+        'Possíveis causas:',
+        '• Webhook n8n indisponível ou inativo',
+        '• URL do webhook incorreta',
+        '• Workflow n8n com erro',
+        '• Estrutura de dados retornada diferente do esperado',
+        '',
+        'Dados zerados carregados temporariamente.'
+      ].join('\n');
+      
+      showError(`Erro ao conectar com N8N: ${errorDetails}`);
+      
+      // Re-throw o erro para que quem chamou saiba que falhou
+      throw error;
+    }
+  }
+
+  // Função para converter dados do n8n para formato interno
+  function convertN8nToPipeRunData(n8nData) {
+    console.log('Dados recebidos do n8n (raw):', JSON.stringify(n8nData, null, 2));
+    
+    // Usar exatamente os dados que vêm do n8n com os cálculos solicitados
+    const totalAtendimentos = n8nData.total_atendimentos || 0;
+    const totalGanhos = n8nData.total_ganho || 0;
+    const totalPerdidosRaw = n8nData.total_perdidos || 0;
+    const totalDuplicados = n8nData.total_duplicados || 0;
+    const totalMql = n8nData.total_mql || 0;
+    
+    // Cálculos conforme solicitado:
+    // - Qualificados = total_ganho
+    // - Perdidos = total_perdidos - total_duplicados  
+    // - Tentativas = total_atendimentos - total_ganho - perdidos_calculados
+    const qualificados = totalGanhos;
+    const perdidos = Math.max(0, totalPerdidosRaw - totalDuplicados);
+    const tentativasContato = Math.max(0, totalAtendimentos - totalGanhos - perdidos);
+    
+    // Processar motivos de perda - mostrar todos os motivos do N8N
+    let motivosPerdaTexto = '';
+    console.log('🔍 Verificando motivos_de_perda:', n8nData.motivos_de_perda);
+    if (n8nData.motivos_de_perda && Array.isArray(n8nData.motivos_de_perda) && n8nData.motivos_de_perda.length > 0) {
+      motivosPerdaTexto = n8nData.motivos_de_perda.map(motivo => `- ${motivo}`).join('\n');
+      console.log('✅ Motivos processados:', motivosPerdaTexto);
+    } else {
+      motivosPerdaTexto = '- Produto que não trabalhamos';
+      console.log('❌ Usando motivo padrão porque:', {
+        existe: !!n8nData.motivos_de_perda,
+        ehArray: Array.isArray(n8nData.motivos_de_perda),
+        tamanho: n8nData.motivos_de_perda?.length
+      });
+    }
+    
+    // Mapear para nossa estrutura
+    const convertedData = {
+      totalAtendimentos: totalAtendimentos,
+      qualificados: qualificados,        // = total_ganho
+      perdidos: perdidos,                // = total_perdidos - total_duplicados
+      tentativasContato: tentativasContato, // = total_atendimentos - total_ganho - perdidos
+      duplicados: totalDuplicados,
+      cardsMql: totalMql,               // Manter para compatibilidade
+      motivoPerda: motivosPerdaTexto,
+      // Dados extras do n8n para referência
+      _n8nData: {
+        total_ganho: totalGanhos,
+        total_perdidos_raw: totalPerdidosRaw,
+        total_mql: totalMql,
+        data_original: n8nData.date || n8nData.day
+      }
+    };
+    
+    console.log('✅ Dados calculados conforme regras:', {
+      totalAtendimentos,
+      qualificados: `${qualificados} (= total_ganho: ${totalGanhos})`,
+      perdidos: `${perdidos} (= total_perdidos: ${totalPerdidosRaw} - duplicados: ${totalDuplicados})`,
+      tentativasContato: `${tentativasContato} (= ${totalAtendimentos} - ${totalGanhos} - ${perdidos})`,
+      duplicados: totalDuplicados
+    });
+    
+    return convertedData;
+  }
+
+  // Funções removidas - agora tudo é feito pelo n8n
+  async function fetchPipeRunReport(date) {
+    // Esta função não é mais necessária - n8n faz tudo
+    throw new Error('Use fetchPipeRunData() que chama o n8n');
+  }
+
+  async function fetchPipeRunMQLCards() {
+    // Esta função não é mais necessária - n8n faz tudo
+    throw new Error('Use fetchPipeRunData() que chama o n8n');
+  }
+
+  function processPipeRunData(reportData, mqlCards) {
+    // Esta função não é mais necessária - n8n processa tudo
+    throw new Error('Processamento feito pelo n8n');
+  }
 
   // ---- Persistence ----
   async function ensureAccount(id, name){
@@ -321,12 +691,14 @@
       date: state.date,
       startTime: state.startTime,
       endTime: state.endTime,
-      groups: state.groups,
-      lossReasons: state.lossReasons,
+      products: state.products,
+      pipeRunData: state.pipeRunData,
+      pipeRunConfig: state.pipeRunConfig,
       updatedAt: Date.now()
     };
     await dailyDoc(state.date, state.account.id).set(payload, { merge: true });
     setSaving(false);
+    showSuccess('Dados salvos automaticamente', 2000);
   }
 
   const saveDailyDebounced = debounce(saveDaily, 500);
@@ -337,56 +709,188 @@
   }
 
   // ---- Report Generation ----
-  function buildReportText({ titleDate, startTime, endTime, totals, lines, lossReasons, totalSteel }){
+  function buildReportText({ titleDate, startTime, endTime, products, pipeRunData }){
     const parts = [];
     parts.push(`Entrada de Lead do Dia ${titleDate} de ${timeHuman(startTime)} às ${timeHuman(endTime)}.`);
     parts.push('');
-    if(typeof totals['Total de Atendimentos'] === 'number'){
-      parts.push(`Total de Atendimentos: ${totals['Total de Atendimentos']}`);
-      parts.push('');
-    }
-    if(typeof totals['MEGA SALDÃO DE FORROS'] === 'number'){
-      parts.push(`MEGA SALDÃO DE FORROS: ${valueOrDash(totals['MEGA SALDÃO DE FORROS'])}`);
-      parts.push('');
-    }
-    if(typeof totals['Qualificados'] === 'number'){
-      parts.push(`Qualificados: ${totals['Qualificados']}`);
-      parts.push('');
-    }
-
-    // Product lines
-    lines.forEach(l=>parts.push(l));
     parts.push('');
-
-    if(typeof totalSteel === 'number'){
-      parts.push(`TOTAL STEEL FRAME PRODUTOS: ${totalSteel}`);
+    
+    // Total de Atendimentos
+    parts.push(`Total de Atendimentos: ${pipeRunData.totalAtendimentos}`);
+    parts.push('');
+    
+    // MEGA SALDÃO DE FORROS (buscar nos produtos)
+    const megaSaldao = products.find(p => p.name === 'MEGA SALDÃO DE FORROS');
+    if (megaSaldao && megaSaldao.value > 0) {
+      parts.push(`MEGA SALDÃO DE FORROS: ${megaSaldao.value}`);
       parts.push('');
     }
-
-    if(typeof totals['Leads em tentativas de contato'] === 'number'){
-      parts.push(`Leads em tentativas de contato: ${totals['Leads em tentativas de contato']}`);
-      parts.push('');
+    
+    // Qualificados
+    parts.push(`Qualificados: ${pipeRunData.qualificados}`);
+    parts.push('');
+    parts.push('');
+    
+    // Produtos/Interesses - usar produtos dinâmicos da configuração
+    if (products && products.length > 0) {
+      products.forEach(produto => {
+        const valor = produto.value > 0 ? produto.value : '-';
+        parts.push(`${produto.name}: ${valor}`);
+      });
+    } else {
+      // Fallback para ordem específica se não houver produtos configurados
+      const produtosOrdem = [
+        'Placas Drywall',
+        'Perfis Drywall', 
+        'Glasroc X',
+        'Painel wall',
+        'Placa Cimentícia',
+        'Perfis de Steel Frame',
+        'Steel Frame Obras',
+        'Quartzolit',
+        'Acústica',
+        'Piso Vinílico'
+      ];
+      
+      produtosOrdem.forEach(nomeProduto => {
+        parts.push(`${nomeProduto}: -`);
+      });
+    }
+    
+    parts.push('');
+    parts.push('');
+    
+    // TOTAL STEEL FRAME PRODUTOS (buscar nos produtos)
+    const totalSteel = products.find(p => p.name === 'TOTAL STEEL FRAME PRODUTOS');
+    const steelValue = totalSteel && totalSteel.value > 0 ? totalSteel.value : '-';
+    parts.push(`TOTAL STEEL FRAME PRODUTOS: ${steelValue}`);
+    parts.push('');
+    parts.push('');
+    
+    // Leads em tentativas de contato
+    parts.push(`Leads em tentativas de contato: ${pipeRunData.tentativasContato}`);
+    parts.push('');
+    parts.push('');
+    
+    // CARDS NO MQL - usar "-" se for 0 ou vazio
+    const cardsMql = pipeRunData.cardsMql > 0 ? pipeRunData.cardsMql : '-';
+    parts.push(`CARDS NO MQL: ${cardsMql}`);
+    parts.push('');
+    parts.push('');
+    
+    // Perdidos
+    parts.push(`Perdidos: ${pipeRunData.perdidos}`);
+    parts.push('');
+    
+    // Duplicado - usar "-" se for 0
+    const duplicados = pipeRunData.duplicados > 0 ? pipeRunData.duplicados : '-';
+    parts.push(`Duplicado: ${duplicados}`);
+    parts.push('');
+    
+    // Motivos de perda - usar dados processados do pipeRunData
+    if (pipeRunData.motivoPerda && pipeRunData.motivoPerda !== '- Produto que não trabalhamos') {
+      parts.push(pipeRunData.motivoPerda);
+    } else if (pipeRunData.n8nData && pipeRunData.n8nData.motivos_de_perda && Array.isArray(pipeRunData.n8nData.motivos_de_perda)) {
+      pipeRunData.n8nData.motivos_de_perda.forEach(motivo => {
+        parts.push(`- ${motivo}`);
+      });
+    } else {
+      // Fallback para motivos padrão
+      parts.push('- Produto que não Trabalhamos');
+      parts.push('- Cliente longe da loja mais próxima');
+      parts.push('- Cliente informou não ter mais interesse');
+      parts.push('- Sem informações para contato');
     }
 
-    if(typeof totals['CARDS NO MQL'] === 'number'){
-      parts.push('');
-      parts.push(`CARDS NO MQL: ${valueOrDash(totals['CARDS NO MQL'])}`);
+    return parts.join('\n');
+  }
+
+  // Função para relatórios históricos baseada em totals coletados
+  function buildHistoryReportText({ titleDate, startTime, endTime, totals, totalSteel, motivosPerda }){
+    const parts = [];
+    parts.push(`Entrada de Lead do Dia ${titleDate} de ${timeHuman(startTime)} às ${timeHuman(endTime)}.`);
+    parts.push('');
+    parts.push('');
+    
+    // Total de Atendimentos
+    const totalAtendimentos = totals['Total de Atendimentos'] || 0;
+    parts.push(`Total de Atendimentos: ${totalAtendimentos || '-'}`);
+    parts.push('');
+    
+    // MEGA SALDÃO DE FORROS
+    const megaSaldao = totals['MEGA SALDÃO DE FORROS'] || 0;
+    if (megaSaldao > 0) {
+      parts.push(`MEGA SALDÃO DE FORROS: ${megaSaldao}`);
       parts.push('');
     }
-
-    if(typeof totals['Perdidos'] === 'number'){
-      parts.push('');
-      parts.push(`Perdidos: ${totals['Perdidos']}`);
-      parts.push('');
-    }
-
-    if(typeof totals['Duplicado'] === 'number'){
-      parts.push(`Duplicado: ${valueOrDash(totals['Duplicado'])}`);
-      parts.push('');
-    }
-
-    if(lossReasons && lossReasons.length){
-      lossReasons.forEach(r=>parts.push(r));
+    
+    // Qualificados
+    const qualificados = totals['Qualificados'] || 0;
+    parts.push(`Qualificados: ${qualificados || '-'}`);
+    parts.push('');
+    parts.push('');
+    
+    // Produtos/Interesses - ordem específica
+    const produtosOrdem = [
+      'Placas Drywall',
+      'Perfis Drywall', 
+      'Glasroc X',
+      'Painel wall',
+      'Placa Cimentícia',
+      'Perfis de Steel Frame',
+      'Steel Frame Obras',
+      'Quartzolit',
+      'Acústica',
+      'Piso Vinílico'
+    ];
+    
+    produtosOrdem.forEach(nomeProduto => {
+      const valor = totals[nomeProduto] || 0;
+      parts.push(`${nomeProduto}: ${valor > 0 ? valor : '-'}`);
+    });
+    
+    parts.push('');
+    parts.push('');
+    
+    // TOTAL STEEL FRAME PRODUTOS
+    const totalSteelValue = totals['TOTAL STEEL FRAME PRODUTOS'] || totalSteel || 0;
+    parts.push(`TOTAL STEEL FRAME PRODUTOS: ${totalSteelValue > 0 ? totalSteelValue : '-'}`);
+    parts.push('');
+    parts.push('');
+    
+    // Leads em tentativas de contato
+    const tentativas = totals['Leads em tentativas de contato'] || 0;
+    parts.push(`Leads em tentativas de contato: ${tentativas || '-'}`);
+    parts.push('');
+    parts.push('');
+    
+    // CARDS NO MQL
+    const cardsMql = totals['CARDS NO MQL'] || 0;
+    parts.push(`CARDS NO MQL: ${cardsMql > 0 ? cardsMql : '-'}`);
+    parts.push('');
+    parts.push('');
+    
+    // Perdidos
+    const perdidos = totals['Perdidos'] || 0;
+    parts.push(`Perdidos: ${perdidos || '-'}`);
+    parts.push('');
+    
+    // Duplicado
+    const duplicados = totals['Duplicado'] || 0;
+    parts.push(`Duplicado: ${duplicados > 0 ? duplicados : '-'}`);
+    parts.push('');
+    
+    // Motivos de perda - usar dados salvos ou padrão
+    if (motivosPerda && Array.isArray(motivosPerda) && motivosPerda.length > 0) {
+      motivosPerda.forEach(motivo => {
+        parts.push(`-${motivo}`);
+      });
+    } else {
+      // Fallback para motivos padrão
+      parts.push('-Produto que não Trabalhamos');
+      parts.push('-Cliente longe da loja mais próxima');
+      parts.push('-Cliente informou não ter mais interesse');
+      parts.push('-Sem informações para contato');
     }
 
     return parts.join('\n');
@@ -395,16 +899,26 @@
   function collectTotals(dailies){
     // Accumulate values by item name across groups
     const totalsMap = new Map();
-    let startTime = null, endTime = null; // Use from current user selection if mixed
+    let startTime = null, endTime = null;
+    let motivosPerda = [];
 
     dailies.forEach(d => {
       startTime = startTime || d.startTime;
       endTime = endTime || d.endTime;
+      
+      // Coletar motivos de perda do pipeRunData salvo
+      if (d.pipeRunData && d.pipeRunData.n8nData && d.pipeRunData.n8nData.motivos_de_perda) {
+        motivosPerda = motivosPerda.concat(d.pipeRunData.n8nData.motivos_de_perda);
+      }
+      
       (d.groups||[]).forEach(g => (g.items||[]).forEach(it => {
         const k = it.name.trim();
         totalsMap.set(k, (totalsMap.get(k)||0) + (Number(it.value)||0));
       }));
     });
+
+    // Remover duplicatas dos motivos de perda
+    motivosPerda = [...new Set(motivosPerda)];
 
     const totals = Object.fromEntries(totalsMap.entries());
 
@@ -437,23 +951,10 @@
 
     const finalLines = ordered.concat(rest);
 
-    return { totals, lines: finalLines, totalSteel, startTime: startTime||state.startTime, endTime: endTime||state.endTime };
+    return { totals, lines: finalLines, totalSteel, startTime: startTime||state.startTime, endTime: endTime||state.endTime, motivosPerda };
   }
 
-  function updateReportPreview(fromDailies, dateISO){
-    const { totals, lines, totalSteel, startTime, endTime } = collectTotals(fromDailies);
-    const text = buildReportText({
-      titleDate: formatBRDate(dateISO || state.date),
-      startTime,
-      endTime,
-      totals,
-      lines,
-      lossReasons: state.lossReasons,
-      totalSteel
-    });
-    reportOutput.value = text;
-    whatsappLink.href = `https://wa.me/?text=${encodeURIComponent(text)}`;
-  }
+  // Função updateReportPreview removida - não é mais necessária com a nova interface
 
   function formatBRDate(iso){
     const [y,m,d]=iso.split('-');
@@ -472,12 +973,8 @@
   }
 
   function updateReportPreviewCurrent(){
-    const doc = {
-      startTime: state.startTime,
-      endTime: state.endTime,
-      groups: state.groups
-    };
-    updateReportPreview([doc]);
+    // Função mantida para compatibilidade
+    // A pré-visualização foi removida da interface
   }
 
   // ---- Events wiring ----
@@ -537,117 +1034,267 @@
 
   dateInput.addEventListener('change', async ()=>{
     state.date = dateInput.value;
+    
+    // Aplicar horários automáticos baseado no dia da semana
+    const workingHours = getWorkingHours(state.date);
+    state.startTime = workingHours.start;
+    state.endTime = workingHours.end;
+    
+    // Atualizar os inputs de horário
+    startTimeInput.value = state.startTime;
+    endTimeInput.value = state.endTime;
+    
     await loadOrInitDaily();
   });
   startTimeInput.addEventListener('change', ()=>{ state.startTime = startTimeInput.value; saveDailyDebounced(); updateReportPreviewCurrent(); });
   endTimeInput.addEventListener('change', ()=>{ state.endTime = endTimeInput.value; saveDailyDebounced(); updateReportPreviewCurrent(); });
 
-  addGroupBtn.addEventListener('click', (e)=>{
+  // Modificar o botão Gerar Relatório para buscar dados do PipeRun
+  generateReportBtn.addEventListener('click', async (e) => {
     e.preventDefault();
-    state.groups.push({ id: uid(), name: 'Novo Grupo', items: [] });
-    render();
-    saveDailyDebounced();
-    updateReportPreviewCurrent();
+    
+    // Buscar dados do PipeRun antes de gerar o relatório
+    setButtonLoading(generateReportBtn, true);
+    try {
+      await fetchPipeRunData();
+      
+      // Salvar os dados atualizados no Firebase imediatamente
+      await saveDaily();
+      
+      // Agora mostrar modal de relatório com dados atualizados
+      reportModal.show();
+    } catch (error) {
+      console.error('Erro ao buscar dados do PipeRun:', error);
+      // Continuar mesmo com erro - mostrar modal sem dados do PipeRun
+      reportModal.show();
+    } finally {
+      setButtonLoading(generateReportBtn, false);
+    }
   });
 
   // Structure editor
   structureBtn.addEventListener('click', ()=>{
     renderStructureEditor();
-    // Bootstrap modal
-    new bootstrap.Modal(structureModal).show();
+    structureModal.show();
   });
 
-  addGroupStructBtn.addEventListener('click', (e)=>{
+  addProductStructBtn.addEventListener('click', (e)=>{
     e.preventDefault();
-    state.groups.push({ id: uid(), name: 'Novo Grupo', items: [] });
+    const newProduct = {
+      id: uid(),
+      name: 'Novo Produto',
+      value: 0
+    };
+    
+    if (!state.products) {
+      state.products = [];
+    }
+    
+    state.products.push(newProduct);
     renderStructureEditor();
+    showInfo('Novo produto adicionado', 2000);
+    
+    // Foca no campo do produto recém-criado
+    setTimeout(() => {
+      const newProductInput = document.querySelector(`[data-id="${newProduct.id}"] .product-name-input`);
+      if (newProductInput) {
+        newProductInput.focus();
+        newProductInput.select();
+      }
+    }, 100);
   });
 
   saveStructureBtn.addEventListener('click', (e)=>{
     e.preventDefault();
-    // collect from editor DOM
-    const groups = [];
-    qsa('.struct-group', structureEditor).forEach(gEl=>{
-      const gid = gEl.dataset.id;
-      const gname = qs('.sg-name', gEl).value || 'Grupo';
-      const items = [];
-      qsa('.sg-item', gEl).forEach(iEl=>{
-        const iid = iEl.dataset.id;
-        const iname = qs('.si-name', iEl).value || 'Item';
-        items.push({ id: iid, name: iname, value: 0 });
-      });
-      groups.push({ id: gid, name: gname, items });
+    // Coletar produtos da tabela na ordem atual
+    const products = [];
+    qsa('.product-row', structureEditor).forEach(row => {
+      const pid = row.dataset.id;
+      const pname = qs('.product-name-input', row).value.trim() || 'Produto';
+      // Encontrar o valor atual do produto
+      const existingProduct = state.products.find(p => p.id === pid);
+      const value = existingProduct ? existingProduct.value : 0;
+      products.push({ id: pid, name: pname, value });
     });
-    state.groups = groups;
+    state.products = products;
     render();
-    updateReportPreviewCurrent();
     saveDailyDebounced();
-    // Close Bootstrap modal
-    bootstrap.Modal.getInstance(structureModal).hide();
+    // Close modal
+    structureModal.hide();
+    showSuccess('Estrutura de produtos salva com sucesso!', 3000);
   });
+
+  // Drag and Drop functions for products reordering
+  let draggedRow = null;
+  
+  function handleDragStart(e) {
+    draggedRow = this;
+    this.style.opacity = '0.5';
+    this.querySelector('.drag-handle').style.cursor = 'grabbing';
+  }
+  
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    // Visual feedback
+    const rows = Array.from(this.parentNode.children);
+    rows.forEach(row => row.classList.remove('drag-over'));
+    this.classList.add('drag-over');
+  }
+  
+  function handleDrop(e) {
+    e.preventDefault();
+    
+    if (draggedRow !== this) {
+      const tbody = this.parentNode;
+      const draggedIndex = Array.from(tbody.children).indexOf(draggedRow);
+      const targetIndex = Array.from(tbody.children).indexOf(this);
+      
+      // Reorder in DOM
+      if (draggedIndex < targetIndex) {
+        tbody.insertBefore(draggedRow, this.nextSibling);
+      } else {
+        tbody.insertBefore(draggedRow, this);
+      }
+      
+      // Reorder in state
+      const draggedProduct = state.products[draggedIndex];
+      state.products.splice(draggedIndex, 1);
+      const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      state.products.splice(newTargetIndex, 0, draggedProduct);
+      
+      // Update position numbers
+      updatePositionNumbers();
+    }
+    
+    this.classList.remove('drag-over');
+  }
+  
+  function handleDragEnd(e) {
+    this.style.opacity = '';
+    this.querySelector('.drag-handle').style.cursor = 'grab';
+    
+    // Remove all drag-over classes
+    const rows = Array.from(this.parentNode.children);
+    rows.forEach(row => row.classList.remove('drag-over'));
+  }
+  
+  function updatePositionNumbers() {
+    const rows = qsa('.product-row', structureEditor);
+    rows.forEach((row, index) => {
+      const badge = row.querySelector('.position-number .badge');
+      if (badge) {
+        badge.textContent = index + 1;
+      }
+    });
+  }
 
   function renderStructureEditor(){
     structureEditor.innerHTML = '';
-    state.groups.forEach(g=>{
-      const gCard = document.createElement('div');
-      gCard.className = 'card struct-group';
-      gCard.dataset.id = g.id;
-      gCard.innerHTML = `
-        <div class="grid grid-2">
-          <div>
-            <label>Nome do Grupo</label>
-            <input class="sg-name" value="${escapeHtml(g.name)}" />
-          </div>
-          <div style="display:flex;align-items:flex-end;gap:8px;justify-content:flex-end">
-            <button class="secondary sg-add-item">+ Item</button>
-            <button class="ghost sg-remove">Excluir Grupo</button>
-          </div>
+    
+    if (!state.products || state.products.length === 0) {
+      structureEditor.innerHTML = `
+        <div class="text-center py-4">
+          <p class="text-muted">Nenhum produto definido. Clique em "Adicionar Produto" para começar.</p>
         </div>
-        <div class="sg-items"></div>
       `;
-      const itemsEl = qs('.sg-items', gCard);
-      g.items.forEach(it=> itemsEl.appendChild(renderStructItem(it)));
-      qs('.sg-add-item', gCard).addEventListener('click', (e)=>{
+      return;
+    }
+    
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-hover products-table';
+    table.innerHTML = `
+      <thead class="table-light">
+        <tr>
+          <th width="40" class="text-center"><i class="bi bi-arrows-move text-muted"></i></th>
+          <th width="50" class="text-center">#</th>
+          <th>Nome do Produto</th>
+          <th width="120" class="text-center">Valor Atual</th>
+          <th width="60" class="text-center">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="products-tbody"></tbody>
+    `;
+    
+    const tbody = table.querySelector('#products-tbody');
+    
+    state.products.forEach((product, index) => {
+      const row = document.createElement('tr');
+      row.className = 'product-row';
+      row.draggable = true;
+      row.dataset.id = product.id;
+      row.innerHTML = `
+        <td class="text-center drag-handle" style="cursor: grab;">
+          <i class="bi bi-grip-vertical text-muted"></i>
+        </td>
+        <td class="text-center position-number">
+          <span class="badge bg-light text-dark">${index + 1}</span>
+        </td>
+        <td>
+          <input class="form-control form-control-sm product-name-input" 
+                 value="${escapeHtml(product.name)}" 
+                 placeholder="Nome do produto"/>
+        </td>
+        <td class="text-center">
+          <small class="text-muted">${product.value}</small>
+        </td>
+        <td class="text-center">
+          <button class="btn btn-outline-danger btn-sm remove-product" title="Remover produto">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      `;
+      
+      // Event listener para remoção
+      const removeBtn = row.querySelector('.remove-product');
+      removeBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        const it = { id: uid(), name: 'Novo Item' };
-        g.items.push({ ...it, value: 0 });
-        itemsEl.appendChild(renderStructItem(it));
+        if (confirm(`Tem certeza que deseja remover "${product.name}"?`)) {
+          state.products = state.products.filter(p => p.id !== product.id);
+          renderStructureEditor();
+        }
       });
-      qs('.sg-remove', gCard).addEventListener('click', (e)=>{
-        e.preventDefault();
-        state.groups = state.groups.filter(x=>x.id!==g.id);
-        renderStructureEditor();
-      });
-      structureEditor.appendChild(gCard);
+      
+      // Drag and drop eventos
+      row.addEventListener('dragstart', handleDragStart);
+      row.addEventListener('dragover', handleDragOver);
+      row.addEventListener('drop', handleDrop);
+      row.addEventListener('dragend', handleDragEnd);
+      
+      tbody.appendChild(row);
     });
+    
+    structureEditor.appendChild(table);
   }
 
   function renderStructItem(it){
     const row = document.createElement('div');
-    row.className = 'sg-item';
+    row.className = 'sg-item mb-2';
     row.dataset.id = it.id;
     row.innerHTML = `
-      <div class="item" style="grid-template-columns:1fr auto;gap:6px">
-        <input class="si-name" value="${escapeHtml(it.name)}" />
-        <button class="ghost si-remove">Remover</button>
+      <div class="row align-items-center">
+        <div class="col-10">
+          <input class="form-control si-name" value="${escapeHtml(it.name)}" placeholder="Nome do item"/>
+        </div>
+        <div class="col-2 text-end">
+          <button class="btn btn-outline-danger btn-sm si-remove">
+            <i class="bi bi-x"></i>
+          </button>
+        </div>
       </div>
     `;
     qs('.si-remove', row).addEventListener('click', (e)=>{
-      e.preventDefault(); row.remove();
+      e.preventDefault(); 
+      if (confirm('Remover este item?')) {
+        row.remove();
+      }
     });
     return row;
   }
 
-  lossReasonsTextarea.addEventListener('input', ()=>{
-    state.lossReasons = lossReasonsTextarea.value.split(/\r?\n/).filter(Boolean);
-    saveDailyDebounced();
-  });
-
-  copyReportBtn.addEventListener('click', async ()=>{
-    await navigator.clipboard.writeText(reportOutput.value);
-    copyReportBtn.textContent = 'Copiado';
-    setTimeout(()=>copyReportBtn.textContent='Copiar',1200);
-  });
+  // Event listeners removidos - elementos não existem mais na interface
+  // lossReasonsTextarea, copyReportBtn foram removidos
 
   // Final report modal event listeners
   copyFinalReportBtn.addEventListener('click', async ()=>{
@@ -677,8 +1324,8 @@
       `;
       accountsList.appendChild(row);
     });
-    // Bootstrap modal
-    new bootstrap.Modal(reportModal).show();
+    // Show modal
+    reportModal.show();
   });
 
   runReportBtn.addEventListener('click', async (e)=>{
@@ -690,40 +1337,159 @@
       const ids = qsa('input[type="checkbox"]', accountsList).filter(c=>c.checked).map(c=>c.value);
       const sum = sumSelected.checked;
 
+      console.log('Parâmetros do relatório:', { date, ids, sum });
+
+      if (ids.length === 0) {
+        showWarning('Selecione pelo menos uma conta para gerar o relatório.');
+        return;
+      }
+
+      // Se estamos gerando para a conta atual e data atual, usar dados mais recentes
+      const isCurrentAccountAndDate = ids.length === 1 && ids[0] === state.account.id && date === state.date;
+
       const dailies = [];
       if(sum){
+        console.log(`🔄 Modo soma ativado. Carregando dados de ${ids.length} conta(s):`, ids);
         for(const id of ids){
           const d = await dailyDoc(date, id).get();
-          if(d.exists) dailies.push(d.data());
+          if(d.exists) {
+            const data = d.data();
+            console.log(`✅ Dados carregados para conta ${id}:`, {
+              produtos: data.products?.length || 0,
+              atendimentos: data.pipeRunData?.totalAtendimentos || 0
+            });
+            dailies.push(data);
+          } else {
+            console.log(`⚠️ Sem dados para conta ${id} na data ${date}`);
+          }
         }
+        console.log(`📊 Total de ${dailies.length} conta(s) com dados encontrada(s)`);
       }else{
         // if not summing, allow a single selected account; fallback to current account
         let targetId = state.account.id;
         if(ids.length === 1){
           targetId = ids[0];
         }else if(ids.length > 1){
-          alert('Selecione apenas 1 conta ou ative a soma de contas.');
+          showWarning('Selecione apenas 1 conta ou ative a soma de contas.');
           return;
         }
-        const d = await dailyDoc(date, targetId).get();
-        if(d.exists) dailies.push(d.data());
+        
+        if(isCurrentAccountAndDate) {
+          // Usar dados atuais do state para conta e data atual
+          console.log('Usando dados atuais do state para relatório');
+          const currentDaily = {
+            account: state.account,
+            date: state.date,
+            startTime: state.startTime,
+            endTime: state.endTime,
+            products: state.products,
+            pipeRunData: state.pipeRunData,
+            pipeRunConfig: state.pipeRunConfig
+          };
+          dailies.push(currentDaily);
+        } else {
+          // Carregar do Firebase para outras situações
+          const d = await dailyDoc(date, targetId).get();
+          if(d.exists) dailies.push(d.data());
+        }
       }
 
       if(!dailies.length){
-        alert('Sem dados para a seleção.');
+        if (sum) {
+          showWarning(`Nenhuma conta selecionada possui dados para ${formatBRDate(date)}. Verifique se as contas têm dados salvos para essa data.`);
+        } else {
+          showWarning(`Sem dados para a conta selecionada em ${formatBRDate(date)}.`);
+        }
         return;
       }
+
+      console.log('Dados usados no relatório:', dailies[0]);
 
       // Generate report text
       const reportText = generateReportText(dailies, date);
       
+      // Salvar relatório no Firebase para histórico
+      try {
+        if (dailies.length === 1) {
+          // Relatório de conta única
+          const daily = dailies[0];
+          console.log('Salvando relatório de conta única:', daily.account?.id || state.account.id);
+          await saveGeneratedReport(date, (daily.account?.id || state.account.id), reportText, {
+            startTime: daily.startTime || state.startTime,
+            endTime: daily.endTime || state.endTime,
+            products: daily.products || state.products,
+            pipeRunData: daily.pipeRunData || state.pipeRunData,
+            isMultiAccount: false,
+            accountsCount: 1
+          });
+        } else {
+          // Relatório somado de múltiplas contas
+          const accountIds = dailies.map(d => d.account?.id).filter(Boolean);
+          console.log(`Salvando relatório somado de ${dailies.length} contas:`, accountIds);
+          
+          // Usar o primeiro horário encontrado ou horário atual
+          let startTime = dailies[0]?.startTime || state.startTime;
+          let endTime = dailies[0]?.endTime || state.endTime;
+          
+          // Recalcular apenas os produtos (não PipeRun)
+          const productTotals = new Map();
+          
+          dailies.forEach(daily => {
+            if (daily.products) {
+              daily.products.forEach(product => {
+                const current = productTotals.get(product.name) || 0;
+                productTotals.set(product.name, current + (product.value || 0));
+              });
+            }
+          });
+
+          const productsArray = Array.from(productTotals.entries()).map(([name, value]) => ({
+            id: name.toLowerCase().replace(/\s+/g, '-'),
+            name,
+            value
+          }));
+
+          // Usar dados do PipeRun uma vez só (não somar)
+          const pipeRunData = state.pipeRunData || dailies.find(d => d.pipeRunData)?.pipeRunData || {
+            totalAtendimentos: 0,
+            qualificados: 0,
+            perdidos: 0,
+            tentativasContato: 0,
+            duplicados: 0,
+            cardsMql: 0,
+            motivoPerda: '- Produto que não trabalhamos'
+          };
+
+          await saveGeneratedReport(date, 'MULTI_ACCOUNT', reportText, {
+            startTime: startTime,
+            endTime: endTime,
+            products: productsArray,
+            pipeRunData: pipeRunData,
+            isMultiAccount: true,
+            accountsCount: dailies.length,
+            accountIds: accountIds
+          });
+        }
+      } catch (error) {
+        console.error('Erro ao salvar relatório:', error);
+        showWarning('Relatório gerado mas houve erro ao salvar no histórico.');
+      }
+      
       // Close report modal and show final modal
-      bootstrap.Modal.getInstance(reportModal).hide();
+      reportModal.hide();
       
       // Show final report modal
       finalReportText.value = reportText;
       updateWhatsAppLink(reportText);
-      new bootstrap.Modal(finalReportModal).show();
+      finalReportModal.show();
+      
+      if (sum && dailies.length > 1) {
+        showSuccess(`Relatório gerado e salvo somando ${dailies.length} contas!`, 4000);
+      } else if (dailies.length === 1) {
+        showSuccess('Relatório gerado e salvo com sucesso!', 3000);
+      } else {
+        showSuccess('Relatório gerado com sucesso!', 3000);
+      }
       
     } finally {
       setButtonLoading(runReportBtn, false);
@@ -731,65 +1497,168 @@
   });
 
   function generateReportText(dailies, date) {
-    const totals = {};
-    for(const daily of dailies){
-      for(const group of daily.groups || []){
-        for(const item of group.items || []){
-          totals[item.name] = (totals[item.name] || 0) + (item.value || 0);
+    if (!dailies || !dailies.length) return 'Sem dados disponíveis';
+
+    console.log(`Gerando relatório para ${dailies.length} conta(s)`, dailies);
+
+    if (dailies.length === 1) {
+      // Caso simples: uma conta apenas
+      const daily = dailies[0];
+      
+      // Usar dados mais recentes do state se disponíveis, senão usar do documento
+      const pipeRunData = state.pipeRunData && state.pipeRunData.totalAtendimentos > 0 
+        ? state.pipeRunData 
+        : (daily.pipeRunData || state.pipeRunData);
+
+      console.log('Gerando relatório para conta única com pipeRunData:', pipeRunData);
+
+      return buildReportText({
+        titleDate: formatBRDate(date),
+        startTime: daily.startTime || state.startTime,
+        endTime: daily.endTime || state.endTime,
+        products: daily.products || state.products,
+        pipeRunData: pipeRunData
+      });
+    } else {
+      // Caso múltiplas contas: somar os valores
+      console.log('Somando dados de múltiplas contas...');
+      
+      // Somar apenas produtos de todas as contas
+      const productTotals = new Map();
+      let startTime = null, endTime = null;
+      
+      // IMPORTANTE: PipeRun é único por dia, não soma entre contas!
+      // Usar dados do PipeRun da primeira conta que tiver ou do state atual
+      let pipeRunData = state.pipeRunData || {
+        totalAtendimentos: 0,
+        qualificados: 0,
+        perdidos: 0,
+        tentativasContato: 0,
+        duplicados: 0,
+        cardsMql: 0,
+        motivoPerda: '- Produto que não trabalhamos'
+      };
+
+      dailies.forEach(daily => {
+        // Coletar horários (usar o primeiro encontrado)
+        if (!startTime) startTime = daily.startTime;
+        if (!endTime) endTime = daily.endTime;
+        
+        // Somar apenas produtos (não PipeRun!)
+        if (daily.products && Array.isArray(daily.products)) {
+          daily.products.forEach(product => {
+            const current = productTotals.get(product.name) || 0;
+            productTotals.set(product.name, current + (product.value || 0));
+          });
         }
-      }
+        
+        // Se ainda não temos dados do PipeRun, usar da primeira conta que tiver
+        if ((!pipeRunData || pipeRunData.totalAtendimentos === 0) && daily.pipeRunData && daily.pipeRunData.totalAtendimentos > 0) {
+          pipeRunData = daily.pipeRunData;
+          console.log('Usando dados do PipeRun da conta:', daily.account?.id);
+        }
+      });
+
+      // Converter produtos totais de volta para array
+      const productsArray = Array.from(productTotals.entries()).map(([name, value]) => ({
+        id: name.toLowerCase().replace(/\s+/g, '-'),
+        name,
+        value
+      }));
+
+      console.log('Produtos somados:', productsArray);
+      console.log('PipeRun único (não somado):', pipeRunData);
+
+      return buildReportText({
+        titleDate: formatBRDate(date),
+        startTime: startTime || state.startTime,
+        endTime: endTime || state.endTime,
+        products: productsArray,
+        pipeRunData: pipeRunData
+      });
     }
-
-    const dt = date || state.date;
-    const parts = [
-      `*RELATÓRIO PRÉ-VENDAS - ${formatDateBR(dt)}*`,
-      `*Período:* ${dailies[0]?.startTime || '08:00'} às ${dailies[0]?.endTime || '18:00'}h`,
-      ''
-    ];
-
-    // Geral section
-    const geralItems = ['Total de Atendimentos','Qualificados','Leads em tentativas de contato','Perdidos','Duplicado'];
-    geralItems.forEach(itemName => {
-      if(typeof totals[itemName] === 'number'){
-        parts.push(`*${itemName}:* ${valueOrDash(totals[itemName])}`);
-      }
-    });
-
-    if(typeof totals['CARDS NO MQL'] === 'number'){
-      parts.push('');
-      parts.push(`*CARDS NO MQL:* ${valueOrDash(totals['CARDS NO MQL'])}`);
-    }
-
-    parts.push('');
-    parts.push('*PRODUTOS/INTERESSES:*');
-
-    // Products section with specific order
-    const productItems = [
-      'Placas Drywall','Perfis Drywall','Glasroc X','Painel wall','Placa Cimentícia',
-      'Perfis de Steel Frame','Steel Frame Obras','Quartzolit','Acústica','Piso Vinílico',
-      'MEGA SALDÃO DE FORROS','TOTAL STEEL FRAME PRODUTOS'
-    ];
-    
-    productItems.forEach(itemName => {
-      if(typeof totals[itemName] === 'number'){
-        parts.push(`*${itemName}:* ${valueOrDash(totals[itemName])}`);
-      }
-    });
-
-    // Add loss reasons
-    parts.push('');
-    parts.push('*MOTIVOS DE PERDA:*');
-    const lossReasons = state.lossReasons.join('\n').split('\n').filter(r=>r.trim());
-    lossReasons.forEach(reason => {
-      if(reason.trim()) parts.push(reason.trim());
-    });
-
-    return parts.join('\n');
   }
 
   function updateWhatsAppLink(text) {
     const encoded = encodeURIComponent(text);
     whatsappFinalLink.href = `https://wa.me/?text=${encoded}`;
+  }
+
+  // Função para limpar filtros do histórico
+  function clearHistoryFilters() {
+    document.getElementById('hist-start').value = '';
+    document.getElementById('hist-end').value = '';
+    document.getElementById('hist-sum-period').checked = false;
+    
+    // Limpar resultados
+    const historyResults = document.getElementById('history-results');
+    historyResults.innerHTML = `
+      <div class="text-center py-4 text-muted">
+        <i class="bi bi-search fs-1 d-block mb-2"></i>
+        <p>Use os filtros acima para buscar relatórios históricos</p>
+      </div>
+    `;
+  }
+
+  // Tornar a função global
+  window.clearHistoryFilters = clearHistoryFilters;
+
+  // Função global para copiar texto
+  async function copyToClipboard(button, text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="bi bi-check me-1"></i>Copiado!';
+      button.disabled = true;
+      showSuccess('Texto copiado para a área de transferência!', 2000);
+      setTimeout(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+      }, 2000);
+    } catch (err) {
+      console.error('Erro ao copiar texto:', err);
+      showError('Erro ao copiar texto. Tente selecionar o texto manualmente.');
+    }
+  }
+
+  // Tornar a função global
+  window.copyToClipboard = copyToClipboard;
+
+  // Função para salvar relatório gerado no Firebase
+  async function saveGeneratedReport(date, accountId, reportText, reportData) {
+    try {
+      const reportDoc = {
+        accountId: accountId,
+        date: date,
+        reportText: reportText,
+        generatedAt: new Date().toISOString(),
+        reportData: {
+          startTime: reportData.startTime,
+          endTime: reportData.endTime,
+          products: reportData.products,
+          pipeRunData: reportData.pipeRunData,
+          isMultiAccount: reportData.isMultiAccount || false,
+          accountsCount: reportData.accountsCount || 1,
+          accountIds: reportData.accountIds || [accountId]
+        }
+      };
+
+      // Salvar na coleção reports usando apenas a data como documento
+      // Isso permite 1 relatório por data que pode ser sobrescrito
+      await firebase.firestore()
+        .collection('reports')
+        .doc(date)
+        .set(reportDoc);
+        
+      if (reportData.isMultiAccount) {
+        console.log(`Relatório multi-conta salvo no Firebase para data ${date} (${reportData.accountsCount} contas)`);
+      } else {
+        console.log(`Relatório salvo no Firebase para data ${date} (conta: ${accountId})`);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar relatório:', error);
+      throw error; // Re-throw para que o código chamador possa tratar
+    }
   }
 
   function formatDateBR(isoDate) {
@@ -801,6 +1670,21 @@
     console.log('After login called with account:', state.account);
     localStorage.setItem('rpv_account_id', state.account.id);
     show('app');
+    
+    // Atualizar dia da semana
+    if (currentDayEl) {
+      const weekdays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+      const today = new Date();
+      currentDayEl.textContent = weekdays[today.getDay()];
+      
+      // Destacar se for fim de semana
+      if (today.getDay() === 0 || today.getDay() === 6) {
+        currentDayEl.classList.add('weekend');
+      } else {
+        currentDayEl.classList.remove('weekend');
+      }
+    }
+    
     await loadOrInitDaily();
     console.log('Login complete, app should be visible');
   }
@@ -808,95 +1692,98 @@
   historyBtn.addEventListener('click', async ()=>{
     histStart.value = state.date;
     histEnd.value = state.date;
-    await listAccounts();
-    accountsListHistory.innerHTML = '';
-    state.accountsCache.forEach(acc=>{
-      const id = `hacc_${acc.id}`;
-      const row = document.createElement('div');
-      row.className = 'check-row';
-      row.innerHTML = `
-        <input type="checkbox" id="${id}" value="${acc.id}" ${acc.id===state.account.id?'checked':''} />
-        <label for="${id}">${acc.name} (#${acc.id})</label>
-      `;
-      accountsListHistory.appendChild(row);
-    });
-    historyResults.innerHTML = '';
-    // Bootstrap modal
-    new bootstrap.Modal(historyModal).show();
+    historyResults.innerHTML = `
+      <div class="text-center py-4 text-muted">
+        <i class="bi bi-search fs-1 d-block mb-2"></i>
+        <p>Use os filtros acima para buscar relatórios históricos</p>
+      </div>
+    `;
+    historyModal.show();
   });
 
   runHistoryBtn.addEventListener('click', async (e)=>{
     e.preventDefault();
     const start = histStart.value;
     const end = histEnd.value;
-    if(!start || !end){ alert('Informe início e fim.'); return; }
-    if(start > end){ alert('A data inicial é maior que a final.'); return; }
-
-    const ids = qsa('input[type="checkbox"]', accountsListHistory).filter(c=>c.checked).map(c=>c.value);
-    if(ids.length===0){ alert('Selecione pelo menos uma conta.'); return; }
+    if(!start || !end){ showWarning('Informe início e fim.'); return; }
+    if(start > end){ showWarning('A data inicial é maior que a final.'); return; }
 
     setButtonLoading(runHistoryBtn, true);
-    historyResults.innerHTML = '<div class="text-center"><div class="loading-spinner"></div> Buscando relatórios...</div>';
+    historyResults.innerHTML = '<div class="text-center"><div class="loading-spinner"></div> Buscando relatórios salvos...</div>';
 
     try {
-      // Query Firestore by date range: we have /daily/{date}/entries/{id}
-      // We'll iterate dates between start and end due to collection group limitation here.
+      // Buscar relatórios salvos na coleção reports
       const dates = enumerateDates(start, end);
-      const dayReports = [];
+      const savedReports = [];
+      
       for(const d of dates){
-        const dailyEntries = [];
-        for(const id of ids){
-          const docSnap = await dailyDoc(d, id).get();
-          if(docSnap.exists) dailyEntries.push(docSnap.data());
-        }
-        if(dailyEntries.length){
-          dayReports.push({ date: d, dailies: dailyEntries });
+        try {
+          // Buscar relatório salvo desta data
+          const reportDoc = await firebase.firestore()
+            .collection('reports')
+            .doc(d)
+            .get();
+          
+          if (reportDoc.exists) {
+            const reportData = reportDoc.data();
+            savedReports.push({
+              date: d,
+              accountId: reportData.accountId,
+              reportText: reportData.reportText,
+              generatedAt: reportData.generatedAt,
+              reportData: reportData.reportData
+            });
+          }
+        } catch (error) {
+          console.log(`Sem relatório salvo para ${d}`);
         }
       }
 
       historyResults.innerHTML = '';
-      if(dayReports.length===0){
-        historyResults.innerHTML = '<p class="text-muted">Sem dados no período selecionado.</p>';
+      if(savedReports.length === 0){
+        historyResults.innerHTML = '<p class="text-muted">Nenhum relatório salvo encontrado no período selecionado.</p>';
         return;
       }
 
-      if(histSumPeriod.checked){
-      // Sum across all days
-      const all = dayReports.flatMap(r=>r.dailies);
-      const { totals, lines, totalSteel, startTime, endTime } = collectTotals(all);
-      const text = buildReportText({
-        titleDate: `${formatBRDate(start)} a ${formatBRDate(end)}`,
-        startTime, endTime, totals, lines, lossReasons: state.lossReasons, totalSteel
+      // Mostrar relatórios individuais
+      savedReports.sort((a,b)=> a.date.localeCompare(b.date));
+      savedReports.forEach((report) => {
+        const card = document.createElement('div');
+        card.className = 'history-report-card';
+        
+        // Determinar o tipo de relatório
+        const isMultiAccount = report.reportData?.isMultiAccount || false;
+        const accountsCount = report.reportData?.accountsCount || 1;
+        const accountInfo = isMultiAccount 
+          ? `${accountsCount} contas somadas` 
+          : `Conta: ${report.accountId}`;
+        
+        card.innerHTML = `
+          <div class="history-report-header">
+            <h6 class="history-report-title">
+              <i class="bi bi-calendar-day me-2"></i>Relatório do dia ${formatBRDate(report.date)}
+              ${isMultiAccount ? '<span class="badge bg-info ms-2">Multi-conta</span>' : ''}
+            </h6>
+            <small class="text-muted">${accountInfo} • Gerado em: ${new Date(report.generatedAt).toLocaleString('pt-BR')}</small>
+          </div>
+          <div class="history-report-body">
+            <textarea class="form-control history-report-textarea" rows="10" readonly>${report.reportText}</textarea>
+            <div class="history-report-actions">
+              <button class="history-btn-copy" onclick="copyToClipboard(this, \`${report.reportText.replace(/`/g, '\\`')}\`)">
+                <i class="bi bi-clipboard me-1"></i>Copiar
+              </button>
+              <a href="https://wa.me/?text=${encodeURIComponent(report.reportText)}" target="_blank" rel="noopener" class="history-btn-whatsapp">
+                <i class="bi bi-whatsapp me-1"></i>WhatsApp
+              </a>
+            </div>
+          </div>
+        `;
+        historyResults.appendChild(card);
       });
-      const ta = document.createElement('textarea');
-      ta.rows = 12; ta.style.width='100%'; ta.value = text;
-      const link = document.createElement('a');
-      link.href = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      link.target = '_blank'; link.rel = 'noopener'; link.className='primary'; link.textContent = 'Abrir no WhatsApp';
-      const copyBtn = document.createElement('button'); copyBtn.textContent='Copiar'; copyBtn.className='secondary';
-      copyBtn.addEventListener('click', async ()=>{ await navigator.clipboard.writeText(text); copyBtn.textContent='Copiado'; setTimeout(()=>copyBtn.textContent='Copiar',1000); });
-      const actions = document.createElement('div'); actions.className='actions'; actions.append(copyBtn, link);
-      historyResults.append(ta, actions);
-    }else{
-      // Show per day blocks
-      dayReports.sort((a,b)=> a.date.localeCompare(b.date));
-      dayReports.forEach(({date, dailies})=>{
-        const { totals, lines, totalSteel, startTime, endTime } = collectTotals(dailies);
-        const text = buildReportText({
-          titleDate: formatBRDate(date),
-          startTime, endTime, totals, lines, lossReasons: state.lossReasons, totalSteel
-        });
-        const card = document.createElement('div'); card.className='card';
-        const h = document.createElement('h4'); h.textContent = `Relatório ${formatBRDate(date)}`;
-        const ta = document.createElement('textarea'); ta.rows=10; ta.style.width='100%'; ta.value = text;
-        const link = document.createElement('a'); link.href = `https://wa.me/?text=${encodeURIComponent(text)}`; link.target='_blank'; link.rel='noopener'; link.className='primary'; link.textContent='WhatsApp';
-        const copyBtn = document.createElement('button'); copyBtn.textContent='Copiar'; copyBtn.className='secondary';
-        copyBtn.addEventListener('click', async ()=>{ await navigator.clipboard.writeText(text); copyBtn.textContent='Copiado'; setTimeout(()=>copyBtn.textContent='Copiar',1000); });
-        const actions = document.createElement('div'); actions.className='actions'; actions.append(copyBtn, link);
-        card.append(h, ta, actions);
-        historyResults.append(card);
-      });
-    }
+      
+    } catch (error) {
+      console.error('Erro ao buscar histórico:', error);
+      historyResults.innerHTML = '<p class="text-danger">Erro ao buscar relatórios. Tente novamente.</p>';
     } finally {
       setButtonLoading(runHistoryBtn, false);
     }
@@ -916,36 +1803,63 @@
   async function loadOrInitDaily(){
     // set date default to today
     if(!state.date) state.date = todayISO();
+    
+    // Aplicar horários automáticos baseado no dia da semana se não tiver dados salvos
+    const workingHours = getWorkingHours(state.date);
+    state.startTime = workingHours.start;
+    state.endTime = workingHours.end;
+    
     render();
     // attempt load
     const doc = await loadDaily(state.date, state.account.id);
     if(doc){
-      state.startTime = doc.startTime || state.startTime;
-      state.endTime = doc.endTime || state.endTime;
-      state.groups = (doc.groups && Array.isArray(doc.groups) && doc.groups.length) ? sanitizeGroups(doc.groups) : state.groups;
-      state.lossReasons = Array.isArray(doc.lossReasons) ? doc.lossReasons : state.lossReasons;
+      // Manter horários salvos se existirem, senão usar automáticos
+      state.startTime = doc.startTime || workingHours.start;
+      state.endTime = doc.endTime || workingHours.end;
+      state.products = (doc.products && Array.isArray(doc.products) && doc.products.length) ? sanitizeProducts(doc.products) : state.products;
+      state.pipeRunData = doc.pipeRunData || state.pipeRunData;
+      state.pipeRunConfig = { ...state.pipeRunConfig, ...doc.pipeRunConfig };
     }else{
       // create initial doc
       await saveDaily();
     }
     render();
-    updateReportPreview([await dailyDoc(state.date, state.account.id).get().then(s=>s.data())]);
   }
 
-  function sanitizeGroups(groups){
-    return groups.map(g=>({
-      id: g.id || uid(),
-      name: String(g.name||'Grupo'),
-      items: (g.items||[]).map(it=>({ id: it.id || uid(), name: String(it.name||'Item'), value: Number(it.value)||0 }))
+  function sanitizeProducts(products){
+    return products.map(p=>({
+      id: p.id || uid(),
+      name: String(p.name||'Produto'),
+      value: Number(p.value)||0
     }));
   }
 
   // ---- Init ----
   window.addEventListener('DOMContentLoaded', async ()=>{
     console.log('DOM loaded, starting app...');
+    
+    // Aplicar horários automáticos baseado na data atual
+    const workingHours = getWorkingHours(todayISO());
+    state.startTime = workingHours.start;
+    state.endTime = workingHours.end;
+    
     // Inputs defaults
     state.date = todayISO();
     dateInput.value = state.date;
+    startTimeInput.value = state.startTime;
+    endTimeInput.value = state.endTime;
+
+    // Garantir que modais fechem corretamente
+    document.addEventListener('hidden.bs.modal', function (e) {
+      // Remove any leftover backdrops
+      const backdrops = document.querySelectorAll('.modal-backdrop');
+      backdrops.forEach(backdrop => backdrop.remove());
+      
+      // Ensure body classes are reset
+      document.body.classList.remove('modal-open');
+      document.body.style.paddingRight = '';
+      document.body.style.overflow = '';
+    });
 
     console.log('Checking for saved account...');
     // auto-login by localStorage
@@ -967,4 +1881,81 @@
     console.log('Showing login screen...');
     show('login');
   });
+
+  // ---- Funções de Cadastro ----
+  function toggleSignup() {
+    const collapse = document.getElementById('signupCollapse');
+    const icon = document.querySelector('.signup-icon');
+    const isExpanded = collapse.classList.contains('show');
+    
+    if (isExpanded) {
+      collapse.classList.remove('show');
+      icon.classList.remove('bi-chevron-up');
+      icon.classList.add('bi-chevron-down');
+    } else {
+      collapse.classList.add('show');
+      icon.classList.remove('bi-chevron-down');
+      icon.classList.add('bi-chevron-up');
+    }
+  }
+
+  async function handleSignup(event) {
+    event.preventDefault();
+    console.log('🔄 Iniciando processo de cadastro...');
+    
+    const nameInput = document.getElementById('signup-name');
+    const idInput = document.getElementById('signup-id');
+    
+    const name = nameInput.value.trim();
+    const id = idInput.value.trim();
+    
+    console.log('📝 Dados do cadastro:', { name, id });
+    
+    if (!name || !id) {
+      showWarning('Por favor, preencha todos os campos');
+      return;
+    }
+    
+    // Validar formato do ID
+    if (!/^[A-Z0-9]+$/i.test(id)) {
+      showWarning('ID deve conter apenas letras e números');
+      return;
+    }
+    
+    try {
+      console.log('🔍 Verificando se ID já existe...');
+      // Verificar se o ID já existe
+      const existingAccount = await getAccount(id);
+      console.log('📄 Conta existente:', existingAccount);
+      
+      if (existingAccount) {
+        showWarning('Este ID já está em uso. Escolha outro.');
+        return;
+      }
+      
+      console.log('💾 Criando nova conta...');
+      // Criar nova conta
+      await ensureAccount(id, name);
+      console.log('✅ Conta criada com sucesso!');
+      showSuccess('Conta criada com sucesso! Você pode fazer login agora.');
+      
+      // Limpar formulário
+      nameInput.value = '';
+      idInput.value = '';
+      
+      // Preencher o campo de login com o ID criado
+      document.getElementById('login-id').value = id;
+      
+      // Fechar o accordion
+      toggleSignup();
+      
+    } catch (error) {
+      console.error('❌ Erro ao criar conta:', error);
+      showError('Erro ao criar conta. Tente novamente.');
+    }
+  }
+
+  // Tornar as funções globais para serem chamadas do HTML
+  window.toggleSignup = toggleSignup;
+  window.handleSignup = handleSignup;
 })();

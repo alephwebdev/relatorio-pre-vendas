@@ -1,0 +1,192 @@
+{
+  "name": "PipeRun Report Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "piperun-report",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-entrada",
+      "name": "Webhook - Receber Pedido",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://app.pipe.run/webservice/integracao/pessoas",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $json.config.token }}"
+            },
+            {
+              "name": "data_inicio",
+              "value": "={{ $json.date.split('-').reverse().join('/') }}"
+            },
+            {
+              "name": "data_fim", 
+              "value": "={{ $json.date.split('-').reverse().join('/') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "buscar-pessoas",
+      "name": "Buscar Pessoas PipeRun",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://app.pipe.run/webservice/integracao/negociospororganizacao",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $json.config.token }}"
+            },
+            {
+              "name": "id_funil",
+              "value": "={{ $json.config.funnel_id }}"
+            },
+            {
+              "name": "id_etapa",
+              "value": "={{ $json.config.stage_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "buscar-mql",
+      "name": "Buscar MQL Cards",
+      "type": "n8n-nodes-base.httpRequest", 
+      "typeVersion": 3,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar dados das pessoas\nconst pessoasData = $input.first().json;\nconst mqlData = $input.last().json;\n\nconst pessoas = pessoasData.data || [];\nconst totalAtendimentos = pessoas.length;\n\n// Contar qualificados\nconst qualificados = pessoas.filter(pessoa => {\n  return pessoa.status === 'Qualificado' || \n         pessoa.origem === 'Qualificado' ||\n         (pessoa.custom_fields && pessoa.custom_fields.qualificado === 'Sim');\n}).length;\n\n// Contar perdidos e processar motivos\nconst perdidos = pessoas.filter(pessoa => {\n  return pessoa.status === 'Perdido' || \n         pessoa.status === 'Descartado' ||\n         (pessoa.custom_fields && pessoa.custom_fields.status_final === 'Perdido');\n});\n\nconst perdidosCount = perdidos.length;\n\n// Processar motivos de perda\nlet motivoPrincipal = '- Produto que não trabalhamos';\nlet duplicados = 0;\nlet leadsRealmentePerdidos = 0;\n\nconst motivosCount = {};\nperdidos.forEach(pessoa => {\n  let motivo = pessoa.motivo_perda || pessoa.observacoes || 'Motivo não informado';\n  \n  motivo = motivo.trim();\n  if (motivo.toLowerCase().includes('duplicad')) {\n    duplicados++;\n  } else if (motivo.toLowerCase().includes('perdido') || \n             motivo.toLowerCase().includes('desistiu') ||\n             motivo.toLowerCase().includes('não tem interesse')) {\n    leadsRealmentePerdidos++;\n  }\n  \n  motivosCount[motivo] = (motivosCount[motivo] || 0) + 1;\n});\n\n// Encontrar o motivo mais comum\nif (Object.keys(motivosCount).length > 0) {\n  const motivoMaisComum = Object.entries(motivosCount)\n    .sort(([,a], [,b]) => b - a)[0][0];\n  motivoPrincipal = `- ${motivoMaisComum}`;\n}\n\n// Calcular perdidos reais (excluindo duplicados)\nconst perdidosReais = Math.max(0, perdidosCount - duplicados);\n\n// Calcular tentativas de contato\nconst tentativasContato = Math.max(0, totalAtendimentos - qualificados - perdidosReais);\n\n// Contar cards no MQL\nconst cardsMql = mqlData.data ? mqlData.data.length : 0;\n\nreturn {\n  success: true,\n  data: {\n    totalAtendimentos,\n    qualificados,\n    perdidos: perdidosReais,\n    tentativasContato,\n    duplicados,\n    cardsMql,\n    motivoPerda: motivoPrincipal\n  },\n  timestamp: new Date().toISOString(),\n  debug: {\n    pessoasCount: pessoas.length,\n    perdidosRaw: perdidosCount,\n    motivosEncontrados: Object.keys(motivosCount)\n  }\n};"
+      },
+      "id": "processar-dados",
+      "name": "Processar Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "webhook-resposta",
+      "name": "Webhook - Enviar Resposta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tratamento de erro\nreturn {\n  success: false,\n  error: $json.error?.message || 'Erro desconhecido',\n  data: {\n    totalAtendimentos: 0,\n    qualificados: 0,\n    perdidos: 0,\n    tentativasContato: 0,\n    duplicados: 0,\n    cardsMql: 0,\n    motivoPerda: '- Erro ao buscar dados'\n  },\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "tratar-erro",
+      "name": "Tratar Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Webhook - Receber Pedido": {
+      "main": [
+        [
+          {
+            "node": "Buscar Pessoas PipeRun",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Buscar MQL Cards", 
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Pessoas PipeRun": {
+      "main": [
+        [
+          {
+            "node": "Processar Dados",
+            "type": "main", 
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Tratar Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar MQL Cards": {
+      "main": [
+        [
+          {
+            "node": "Processar Dados",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Tratar Erro", 
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Dados": {
+      "main": [
+        [
+          {
+            "node": "Webhook - Enviar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tratar Erro": {
+      "main": [
+        [
+          {
+            "node": "Webhook - Enviar Resposta",
+            "type": "main", 
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
