@@ -599,18 +599,29 @@
     
     // Cálculos conforme solicitado:
     // - Qualificados = total_ganho
-    // - Perdidos = total_perdidos - total_duplicados  
-    // - Tentativas = total_atendimentos - total_ganho - perdidos_calculados
+    // - Perdidos = usar valor exato do N8N (total_perdidos)
+    // - Tentativas = total_atendimentos - total_ganho - perdidos_exato
     const qualificados = totalGanhos;
-    const perdidos = Math.max(0, totalPerdidosRaw - totalDuplicados);
+    const perdidos = totalPerdidosRaw; // Usar valor exato do N8N
     const tentativasContato = Math.max(0, totalAtendimentos - totalGanhos - perdidos);
     
-    // Processar motivos de perda - mostrar todos os motivos do N8N
+    // Processar motivos de perda - filtrar LEAD DUPLICADO
     let motivosPerdaTexto = '';
     console.log('🔍 Verificando motivos_de_perda:', n8nData.motivos_de_perda);
     if (n8nData.motivos_de_perda && Array.isArray(n8nData.motivos_de_perda) && n8nData.motivos_de_perda.length > 0) {
-      motivosPerdaTexto = n8nData.motivos_de_perda.map(motivo => `- ${motivo}`).join('\n');
-      console.log('✅ Motivos processados:', motivosPerdaTexto);
+      // Filtrar motivos para remover "LEAD DUPLICADO"
+      const motivosFiltrados = n8nData.motivos_de_perda.filter(motivo => {
+        const motivoUpper = motivo.toUpperCase();
+        return !motivoUpper.includes('LEAD DUPLICADO') && !motivoUpper.includes('DUPLICADO');
+      });
+      
+      if (motivosFiltrados.length > 0) {
+        motivosPerdaTexto = motivosFiltrados.map(motivo => `- ${motivo}`).join('\n');
+        console.log('✅ Motivos processados (sem duplicados):', motivosPerdaTexto);
+      } else {
+        motivosPerdaTexto = '- Produto que não trabalhamos';
+        console.log('⚠️ Todos os motivos eram duplicados, usando padrão');
+      }
     } else {
       motivosPerdaTexto = '- Produto que não trabalhamos';
       console.log('❌ Usando motivo padrão porque:', {
@@ -624,8 +635,8 @@
     const convertedData = {
       totalAtendimentos: totalAtendimentos,
       qualificados: qualificados,        // = total_ganho
-      perdidos: perdidos,                // = total_perdidos - total_duplicados
-      tentativasContato: tentativasContato, // = total_atendimentos - total_ganho - perdidos
+      perdidos: perdidos,                // = total_perdidos (valor exato)
+      tentativasContato: tentativasContato, // = total_atendimentos - total_ganho - perdidos_exato
       duplicados: totalDuplicados,
       cardsMql: totalMql,               // Manter para compatibilidade
       motivoPerda: motivosPerdaTexto,
@@ -634,16 +645,18 @@
         total_ganho: totalGanhos,
         total_perdidos_raw: totalPerdidosRaw,
         total_mql: totalMql,
-        data_original: n8nData.date || n8nData.day
+        data_original: n8nData.date || n8nData.day,
+        motivos_originais: n8nData.motivos_de_perda
       }
     };
     
     console.log('✅ Dados calculados conforme regras:', {
       totalAtendimentos,
       qualificados: `${qualificados} (= total_ganho: ${totalGanhos})`,
-      perdidos: `${perdidos} (= total_perdidos: ${totalPerdidosRaw} - duplicados: ${totalDuplicados})`,
+      perdidos: `${perdidos} (= total_perdidos exato: ${totalPerdidosRaw})`,
       tentativasContato: `${tentativasContato} (= ${totalAtendimentos} - ${totalGanhos} - ${perdidos})`,
-      duplicados: totalDuplicados
+      duplicados: totalDuplicados,
+      motivosFiltrados: 'LEAD DUPLICADO removido dos motivos'
     });
     
     return convertedData;
@@ -787,13 +800,27 @@
     parts.push(`Duplicado: ${duplicados}`);
     parts.push('');
     
-    // Motivos de perda - usar dados processados do pipeRunData
+    // Motivos de perda - usar dados processados do pipeRunData (já filtrados)
     if (pipeRunData.motivoPerda && pipeRunData.motivoPerda !== '- Produto que não trabalhamos') {
       parts.push(pipeRunData.motivoPerda);
-    } else if (pipeRunData.n8nData && pipeRunData.n8nData.motivos_de_perda && Array.isArray(pipeRunData.n8nData.motivos_de_perda)) {
-      pipeRunData.n8nData.motivos_de_perda.forEach(motivo => {
-        parts.push(`- ${motivo}`);
+    } else if (pipeRunData._n8nData && pipeRunData._n8nData.motivos_originais && Array.isArray(pipeRunData._n8nData.motivos_originais)) {
+      // Filtrar LEAD DUPLICADO se estiver usando dados originais
+      const motivosFiltrados = pipeRunData._n8nData.motivos_originais.filter(motivo => {
+        const motivoUpper = motivo.toUpperCase();
+        return !motivoUpper.includes('LEAD DUPLICADO') && !motivoUpper.includes('DUPLICADO');
       });
+      
+      if (motivosFiltrados.length > 0) {
+        motivosFiltrados.forEach(motivo => {
+          parts.push(`- ${motivo}`);
+        });
+      } else {
+        // Se todos eram duplicados, usar motivos padrão
+        parts.push('- Produto que não Trabalhamos');
+        parts.push('- Cliente longe da loja mais próxima');
+        parts.push('- Cliente informou não ter mais interesse');
+        parts.push('- Sem informações para contato');
+      }
     } else {
       // Fallback para motivos padrão
       parts.push('- Produto que não Trabalhamos');
