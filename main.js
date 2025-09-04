@@ -36,7 +36,8 @@
       funnelId: '45772',
       stageId: '262331'
     },
-    accountsCache: [] // fetched list for report selection
+  accountsCache: [], // fetched list for report selection
+  productStructure: [] // estrutura global compartilhada [{id,name,order}]
   };
 
   // ---- Firebase Init ----
@@ -69,6 +70,8 @@
   const colAccounts = () => db.collection('accounts');
   // daily data under /daily/{date}/entries/{accountId}
   const dailyDoc = (date, accountId) => db.collection('daily').doc(date).collection('entries').doc(accountId);
+  // global structure config: /config/products
+  const structureDoc = () => db.collection('config').doc('products');
 
   // ---- DOM refs ----
   const loginView = qs('#login-view');
@@ -599,29 +602,18 @@
     
     // Cálculos conforme solicitado:
     // - Qualificados = total_ganho
-    // - Perdidos = usar valor exato do N8N (total_perdidos)
-    // - Tentativas = total_atendimentos - total_ganho - perdidos_exato
+    // - Perdidos = total_perdidos - total_duplicados  
+    // - Tentativas = total_atendimentos - total_ganho - perdidos_calculados
     const qualificados = totalGanhos;
-    const perdidos = totalPerdidosRaw; // Usar valor exato do N8N
+    const perdidos = Math.max(0, totalPerdidosRaw - totalDuplicados);
     const tentativasContato = Math.max(0, totalAtendimentos - totalGanhos - perdidos);
     
-    // Processar motivos de perda - filtrar LEAD DUPLICADO
+    // Processar motivos de perda - mostrar todos os motivos do N8N
     let motivosPerdaTexto = '';
     console.log('🔍 Verificando motivos_de_perda:', n8nData.motivos_de_perda);
     if (n8nData.motivos_de_perda && Array.isArray(n8nData.motivos_de_perda) && n8nData.motivos_de_perda.length > 0) {
-      // Filtrar motivos para remover "LEAD DUPLICADO"
-      const motivosFiltrados = n8nData.motivos_de_perda.filter(motivo => {
-        const motivoUpper = motivo.toUpperCase();
-        return !motivoUpper.includes('LEAD DUPLICADO') && !motivoUpper.includes('DUPLICADO');
-      });
-      
-      if (motivosFiltrados.length > 0) {
-        motivosPerdaTexto = motivosFiltrados.map(motivo => `- ${motivo}`).join('\n');
-        console.log('✅ Motivos processados (sem duplicados):', motivosPerdaTexto);
-      } else {
-        motivosPerdaTexto = '- Produto que não trabalhamos';
-        console.log('⚠️ Todos os motivos eram duplicados, usando padrão');
-      }
+      motivosPerdaTexto = n8nData.motivos_de_perda.map(motivo => `- ${motivo}`).join('\n');
+      console.log('✅ Motivos processados:', motivosPerdaTexto);
     } else {
       motivosPerdaTexto = '- Produto que não trabalhamos';
       console.log('❌ Usando motivo padrão porque:', {
@@ -635,8 +627,8 @@
     const convertedData = {
       totalAtendimentos: totalAtendimentos,
       qualificados: qualificados,        // = total_ganho
-      perdidos: perdidos,                // = total_perdidos (valor exato)
-      tentativasContato: tentativasContato, // = total_atendimentos - total_ganho - perdidos_exato
+      perdidos: perdidos,                // = total_perdidos - total_duplicados
+      tentativasContato: tentativasContato, // = total_atendimentos - total_ganho - perdidos
       duplicados: totalDuplicados,
       cardsMql: totalMql,               // Manter para compatibilidade
       motivoPerda: motivosPerdaTexto,
@@ -645,18 +637,16 @@
         total_ganho: totalGanhos,
         total_perdidos_raw: totalPerdidosRaw,
         total_mql: totalMql,
-        data_original: n8nData.date || n8nData.day,
-        motivos_originais: n8nData.motivos_de_perda
+        data_original: n8nData.date || n8nData.day
       }
     };
     
     console.log('✅ Dados calculados conforme regras:', {
       totalAtendimentos,
       qualificados: `${qualificados} (= total_ganho: ${totalGanhos})`,
-      perdidos: `${perdidos} (= total_perdidos exato: ${totalPerdidosRaw})`,
+      perdidos: `${perdidos} (= total_perdidos: ${totalPerdidosRaw} - duplicados: ${totalDuplicados})`,
       tentativasContato: `${tentativasContato} (= ${totalAtendimentos} - ${totalGanhos} - ${perdidos})`,
-      duplicados: totalDuplicados,
-      motivosFiltrados: 'LEAD DUPLICADO removido dos motivos'
+      duplicados: totalDuplicados
     });
     
     return convertedData;
@@ -721,6 +711,79 @@
     state.accountsCache = snap.docs.map(d=>d.data());
   }
 
+  // ---- Global Product Structure (Shared across accounts) ----
+  let unsubscribeStructure = null;
+
+  function sortByOrder(arr){ return [...arr].sort((a,b)=> (a.order??0) - (b.order??0)); }
+
+  function mergeStructureWithDaily(structureProducts, dailyProducts){
+    const dailyById = new Map();
+    const dailyByName = new Map();
+    (dailyProducts||[]).forEach(p=>{
+      if(p?.id) dailyById.set(p.id, p);
+      if(p?.name) dailyByName.set(String(p.name).trim().toLowerCase(), p);
+    });
+    return sortByOrder(structureProducts||[]).map(sp=>{
+      const match = dailyById.get(sp.id) || dailyByName.get(String(sp.name||'').trim().toLowerCase());
+      return { id: sp.id, name: sp.name, value: Number(match?.value)||0 };
+    });
+  }
+
+  async function ensureGlobalStructure(){
+    const ref = structureDoc();
+    const snap = await ref.get();
+    if(!snap.exists){
+      const base = (state.products||[]).map((p,idx)=>({ id: uid(), name: p.name, order: idx }));
+      await ref.set({ products: base, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: state.account?.id||'system' });
+      state.productStructure = base;
+      return base;
+    }
+    const data = snap.data();
+    const arr = Array.isArray(data.products) ? data.products : [];
+    state.productStructure = sortByOrder(arr);
+    return state.productStructure;
+  }
+
+  function subscribeGlobalStructure(){
+    if(unsubscribeStructure){ try{unsubscribeStructure();}catch(_){} }
+    unsubscribeStructure = structureDoc().onSnapshot(snap=>{
+      if(!snap.exists) return;
+      const data = snap.data();
+      const arr = Array.isArray(data.products) ? data.products : [];
+      state.productStructure = sortByOrder(arr);
+      // Reconciliate local products preserving values
+      state.products = mergeStructureWithDaily(state.productStructure, state.products);
+      renderProducts();
+    }, err=> console.error('Listener estrutura global erro:', err));
+  }
+
+  async function saveGlobalStructure(rows){
+    // rows: [{id,name,order}]
+    await structureDoc().set({ products: rows, updatedAt: Date.now(), updatedBy: state.account?.id||'unknown' }, { merge: true });
+    state.productStructure = sortByOrder(rows);
+    // Update local state preserving values
+    state.products = mergeStructureWithDaily(state.productStructure, state.products);
+  }
+
+  async function syncStructureToAllAccounts(targetDate){
+    try{
+      const accountsSnap = await colAccounts().get();
+      const ids = accountsSnap.docs.map(d=>d.id);
+      const struct = state.productStructure;
+      for(const accId of ids){
+        const ref = dailyDoc(targetDate, accId);
+        const snap = await ref.get();
+        if(!snap.exists) continue;
+        const data = snap.data();
+        const merged = mergeStructureWithDaily(struct, data.products||[]);
+        await ref.set({ products: merged, updatedAt: Date.now() }, { merge: true });
+      }
+      console.log('Estrutura sincronizada em', ids.length, 'contas');
+    }catch(err){
+      console.error('Falha ao sincronizar estrutura para todas as contas:', err);
+    }
+  }
+
   // ---- Report Generation ----
   function buildReportText({ titleDate, startTime, endTime, products, pipeRunData }){
     const parts = [];
@@ -746,7 +809,10 @@
     
     // Produtos/Interesses - usar produtos dinâmicos da configuração
     if (products && products.length > 0) {
-      products.forEach(produto => {
+      // ordenar conforme estrutura global atual, se houver
+      const order = new Map((state.productStructure||[]).map((p,i)=>[p.name,i]));
+      const sorted = [...products].sort((a,b)=> (order.get(a.name)??999) - (order.get(b.name)??999));
+      sorted.forEach(produto => {
         const valor = produto.value > 0 ? produto.value : '-';
         parts.push(`${produto.name}: ${valor}`);
       });
@@ -800,27 +866,13 @@
     parts.push(`Duplicado: ${duplicados}`);
     parts.push('');
     
-    // Motivos de perda - usar dados processados do pipeRunData (já filtrados)
+    // Motivos de perda - usar dados processados do pipeRunData
     if (pipeRunData.motivoPerda && pipeRunData.motivoPerda !== '- Produto que não trabalhamos') {
       parts.push(pipeRunData.motivoPerda);
-    } else if (pipeRunData._n8nData && pipeRunData._n8nData.motivos_originais && Array.isArray(pipeRunData._n8nData.motivos_originais)) {
-      // Filtrar LEAD DUPLICADO se estiver usando dados originais
-      const motivosFiltrados = pipeRunData._n8nData.motivos_originais.filter(motivo => {
-        const motivoUpper = motivo.toUpperCase();
-        return !motivoUpper.includes('LEAD DUPLICADO') && !motivoUpper.includes('DUPLICADO');
+    } else if (pipeRunData.n8nData && pipeRunData.n8nData.motivos_de_perda && Array.isArray(pipeRunData.n8nData.motivos_de_perda)) {
+      pipeRunData.n8nData.motivos_de_perda.forEach(motivo => {
+        parts.push(`- ${motivo}`);
       });
-      
-      if (motivosFiltrados.length > 0) {
-        motivosFiltrados.forEach(motivo => {
-          parts.push(`- ${motivo}`);
-        });
-      } else {
-        // Se todos eram duplicados, usar motivos padrão
-        parts.push('- Produto que não Trabalhamos');
-        parts.push('- Cliente longe da loja mais próxima');
-        parts.push('- Cliente informou não ter mais interesse');
-        parts.push('- Sem informações para contato');
-      }
     } else {
       // Fallback para motivos padrão
       parts.push('- Produto que não Trabalhamos');
@@ -964,9 +1016,9 @@
     });
 
     // Ensure listed keys appear even if 0/-
-    const preferredOrder = [
-      'Placas Drywall','Perfis Drywall','Glasroc X','Painel wall','Placa Cimentícia','Perfis de Steel Frame','Steel Frame Obras','Quartzolit','Acústica','Piso Vinílico'
-    ];
+    const preferredOrder = (state.productStructure && state.productStructure.length)
+      ? state.productStructure.map(p=>p.name)
+      : ['Placas Drywall','Perfis Drywall','Glasroc X','Painel wall','Placa Cimentícia','Perfis de Steel Frame','Steel Frame Obras','Quartzolit','Acústica','Piso Vinílico'];
     const ordered = [];
     preferredOrder.forEach(k=>{
       const v = totals.hasOwnProperty(k) ? totals[k] : 0;
@@ -1107,17 +1159,9 @@
 
   addProductStructBtn.addEventListener('click', (e)=>{
     e.preventDefault();
-    const newProduct = {
-      id: uid(),
-      name: 'Novo Produto',
-      value: 0
-    };
-    
-    if (!state.products) {
-      state.products = [];
-    }
-    
-    state.products.push(newProduct);
+    const newProduct = { id: uid(), name: 'Novo Produto', order: (state.productStructure?.length||0) };
+    if (!state.productStructure) state.productStructure = [];
+    state.productStructure.push(newProduct);
     renderStructureEditor();
     showInfo('Novo produto adicionado', 2000);
     
@@ -1131,24 +1175,27 @@
     }, 100);
   });
 
-  saveStructureBtn.addEventListener('click', (e)=>{
+  saveStructureBtn.addEventListener('click', async (e)=>{
     e.preventDefault();
-    // Coletar produtos da tabela na ordem atual
-    const products = [];
-    qsa('.product-row', structureEditor).forEach(row => {
+    // Coletar produtos da tabela na ordem atual para salvar como estrutura GLOBAL
+    const rows = [];
+    qsa('.product-row', structureEditor).forEach((row, idx) => {
       const pid = row.dataset.id;
       const pname = qs('.product-name-input', row).value.trim() || 'Produto';
-      // Encontrar o valor atual do produto
-      const existingProduct = state.products.find(p => p.id === pid);
-      const value = existingProduct ? existingProduct.value : 0;
-      products.push({ id: pid, name: pname, value });
+      rows.push({ id: pid, name: pname, order: idx });
     });
-    state.products = products;
-    render();
-    saveDailyDebounced();
-    // Close modal
-    structureModal.hide();
-    showSuccess('Estrutura de produtos salva com sucesso!', 3000);
+    try{
+      showLoading('Salvando estrutura global...');
+      await saveGlobalStructure(rows);
+      // Atualizar o daily atual com a estrutura nova mantendo valores
+      await saveDaily();
+      // Sincronizar para todas as contas do dia
+      await syncStructureToAllAccounts(state.date);
+      structureModal.hide();
+      showSuccess('Estrutura global salva e sincronizada!', 3000);
+    } finally {
+      hideLoading();
+    }
   });
 
   // Drag and Drop functions for products reordering
@@ -1219,8 +1266,8 @@
 
   function renderStructureEditor(){
     structureEditor.innerHTML = '';
-    
-    if (!state.products || state.products.length === 0) {
+    const struct = state.productStructure || [];
+    if (!struct || struct.length === 0) {
       structureEditor.innerHTML = `
         <div class="text-center py-4">
           <p class="text-muted">Nenhum produto definido. Clique em "Adicionar Produto" para começar.</p>
@@ -1244,9 +1291,10 @@
       <tbody id="products-tbody"></tbody>
     `;
     
-    const tbody = table.querySelector('#products-tbody');
-    
-    state.products.forEach((product, index) => {
+  const tbody = table.querySelector('#products-tbody');
+  // Mostrar linhas com base na estrutura global, exibindo valor atual do dia se existir
+  const valueById = new Map((state.products||[]).map(p=>[p.id, p.value]));
+  sortByOrder(struct).forEach((product, index) => {
       const row = document.createElement('tr');
       row.className = 'product-row';
       row.draggable = true;
@@ -1264,7 +1312,7 @@
                  placeholder="Nome do produto"/>
         </td>
         <td class="text-center">
-          <small class="text-muted">${product.value}</small>
+      <small class="text-muted">${valueById.get(product.id) || 0}</small>
         </td>
         <td class="text-center">
           <button class="btn btn-outline-danger btn-sm remove-product" title="Remover produto">
@@ -1277,8 +1325,8 @@
       const removeBtn = row.querySelector('.remove-product');
       removeBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        if (confirm(`Tem certeza que deseja remover "${product.name}"?`)) {
-          state.products = state.products.filter(p => p.id !== product.id);
+        if (confirm(`Tem certeza que deseja remover "${product.name}" da estrutura global?`)) {
+          state.productStructure = (state.productStructure||[]).filter(p => p.id !== product.id).map((p, idx)=>({ ...p, order: idx }));
           renderStructureEditor();
         }
       });
@@ -1381,6 +1429,8 @@
           const d = await dailyDoc(date, id).get();
           if(d.exists) {
             const data = d.data();
+            // alinhar produtos com a estrutura global
+            data.products = mergeStructureWithDaily(state.productStructure, data.products||[]);
             console.log(`✅ Dados carregados para conta ${id}:`, {
               produtos: data.products?.length || 0,
               atendimentos: data.pipeRunData?.totalAtendimentos || 0
@@ -1417,7 +1467,11 @@
         } else {
           // Carregar do Firebase para outras situações
           const d = await dailyDoc(date, targetId).get();
-          if(d.exists) dailies.push(d.data());
+          if(d.exists) {
+            const data = d.data();
+            data.products = mergeStructureWithDaily(state.productStructure, data.products||[]);
+            dailies.push(data);
+          }
         }
       }
 
@@ -1586,12 +1640,11 @@
         }
       });
 
-      // Converter produtos totais de volta para array
-      const productsArray = Array.from(productTotals.entries()).map(([name, value]) => ({
-        id: name.toLowerCase().replace(/\s+/g, '-'),
-        name,
-        value
-      }));
+  // Converter produtos totais de volta para array e ordenar por estrutura global
+  const entries = Array.from(productTotals.entries());
+  const order = new Map((state.productStructure||[]).map((p,i)=>[p.name,i]));
+  entries.sort((a,b)=> (order.get(a[0])??999) - (order.get(b[0])??999));
+  const productsArray = entries.map(([name, value]) => ({ id: name.toLowerCase().replace(/\s+/g, '-'), name, value }));
 
       console.log('Produtos somados:', productsArray);
       console.log('PipeRun único (não somado):', pipeRunData);
@@ -1712,7 +1765,10 @@
       }
     }
     
-    await loadOrInitDaily();
+  // garantir estrutura global e assinar alterações
+  await ensureGlobalStructure();
+  subscribeGlobalStructure();
+  await loadOrInitDaily();
     console.log('Login complete, app should be visible');
   }
 
@@ -1838,17 +1894,22 @@
     
     render();
     // attempt load
-    const doc = await loadDaily(state.date, state.account.id);
+  const doc = await loadDaily(state.date, state.account.id);
     if(doc){
       // Manter horários salvos se existirem, senão usar automáticos
       state.startTime = doc.startTime || workingHours.start;
       state.endTime = doc.endTime || workingHours.end;
-      state.products = (doc.products && Array.isArray(doc.products) && doc.products.length) ? sanitizeProducts(doc.products) : state.products;
+  const loadedProducts = (doc.products && Array.isArray(doc.products) && doc.products.length) ? sanitizeProducts(doc.products) : state.products;
+  // alinhar aos produtos da estrutura global preservando valores
+  const struct = state.productStructure.length ? state.productStructure : await ensureGlobalStructure();
+  state.products = mergeStructureWithDaily(struct, loadedProducts);
       state.pipeRunData = doc.pipeRunData || state.pipeRunData;
       state.pipeRunConfig = { ...state.pipeRunConfig, ...doc.pipeRunConfig };
     }else{
       // create initial doc
-      await saveDaily();
+  const struct = state.productStructure.length ? state.productStructure : await ensureGlobalStructure();
+  state.products = mergeStructureWithDaily(struct, state.products);
+  await saveDaily();
     }
     render();
   }
