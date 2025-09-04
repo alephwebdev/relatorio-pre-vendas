@@ -593,34 +593,34 @@
   function convertN8nToPipeRunData(n8nData) {
     console.log('Dados recebidos do n8n (raw):', JSON.stringify(n8nData, null, 2));
     
-    // Usar exatamente os dados que vêm do n8n com os cálculos solicitados
+  // Usar exatamente os dados que vêm do n8n com os cálculos solicitados
     const totalAtendimentos = n8nData.total_atendimentos || 0;
     const totalGanhos = n8nData.total_ganho || 0;
     const totalPerdidosRaw = n8nData.total_perdidos || 0;
     const totalDuplicados = n8nData.total_duplicados || 0;
     const totalMql = n8nData.total_mql || 0;
     
-    // Cálculos conforme solicitado:
-    // - Qualificados = total_ganho
-    // - Perdidos = total_perdidos - total_duplicados  
-    // - Tentativas = total_atendimentos - total_ganho - perdidos_calculados
+  // Cálculos conforme solicitado:
+  // - Qualificados = total_ganho
+  // - Perdidos = total_perdidos (exatamente como vem do n8n)
+  // - Duplicados = total_duplicados (separado)
+  // - Tentativas = total_atendimentos - total_ganho - perdidos (não considerar duplicados)
     const qualificados = totalGanhos;
-    const perdidos = Math.max(0, totalPerdidosRaw - totalDuplicados);
-    const tentativasContato = Math.max(0, totalAtendimentos - totalGanhos - perdidos);
+  const perdidos = Math.max(0, totalPerdidosRaw);
+  const tentativasContato = Math.max(0, totalAtendimentos - totalGanhos - perdidos);
     
     // Processar motivos de perda - mostrar todos os motivos do N8N
     let motivosPerdaTexto = '';
     console.log('🔍 Verificando motivos_de_perda:', n8nData.motivos_de_perda);
-    if (n8nData.motivos_de_perda && Array.isArray(n8nData.motivos_de_perda) && n8nData.motivos_de_perda.length > 0) {
-      motivosPerdaTexto = n8nData.motivos_de_perda.map(motivo => `- ${motivo}`).join('\n');
-      console.log('✅ Motivos processados:', motivosPerdaTexto);
+    const motivosArray = Array.isArray(n8nData.motivos_de_perda) ? n8nData.motivos_de_perda : [];
+    const filteredMotivos = motivosArray.filter(m => String(m).trim().toUpperCase() !== 'LEAD DUPLICADO');
+    if (filteredMotivos.length > 0) {
+      motivosPerdaTexto = filteredMotivos.map(motivo => `- ${motivo}`).join('\n');
+      console.log('✅ Motivos processados (sem LEAD DUPLICADO):', motivosPerdaTexto);
     } else {
-      motivosPerdaTexto = '- Produto que não trabalhamos';
-      console.log('❌ Usando motivo padrão porque:', {
-        existe: !!n8nData.motivos_de_perda,
-        ehArray: Array.isArray(n8nData.motivos_de_perda),
-        tamanho: n8nData.motivos_de_perda?.length
-      });
+      // nenhum motivo útil após filtro; manter texto vazio para não imprimir fallback padrão
+      motivosPerdaTexto = '';
+      console.log('ℹ️ Nenhum motivo de perda (após filtro de duplicados)');
     }
     
     // Mapear para nossa estrutura
@@ -633,6 +633,10 @@
       cardsMql: totalMql,               // Manter para compatibilidade
       motivoPerda: motivosPerdaTexto,
       // Dados extras do n8n para referência
+      // manter compatibilidade e permitir renderização condicional sem fallback
+      n8nData: {
+        motivos_de_perda: filteredMotivos
+      },
       _n8nData: {
         total_ganho: totalGanhos,
         total_perdidos_raw: totalPerdidosRaw,
@@ -644,8 +648,8 @@
     console.log('✅ Dados calculados conforme regras:', {
       totalAtendimentos,
       qualificados: `${qualificados} (= total_ganho: ${totalGanhos})`,
-      perdidos: `${perdidos} (= total_perdidos: ${totalPerdidosRaw} - duplicados: ${totalDuplicados})`,
-      tentativasContato: `${tentativasContato} (= ${totalAtendimentos} - ${totalGanhos} - ${perdidos})`,
+      perdidos: `${perdidos} (= total_perdidos: ${totalPerdidosRaw})`,
+  tentativasContato: `${tentativasContato} (= ${totalAtendimentos} - ${totalGanhos} - ${perdidos})`,
       duplicados: totalDuplicados
     });
     
@@ -866,20 +870,14 @@
     parts.push(`Duplicado: ${duplicados}`);
     parts.push('');
     
-    // Motivos de perda - usar dados processados do pipeRunData
-    if (pipeRunData.motivoPerda && pipeRunData.motivoPerda !== '- Produto que não trabalhamos') {
+    // Motivos de perda - usar dados processados do pipeRunData (sem LEAD DUPLICADO)
+    if (pipeRunData.motivoPerda && pipeRunData.motivoPerda.trim() !== '') {
       parts.push(pipeRunData.motivoPerda);
-    } else if (pipeRunData.n8nData && pipeRunData.n8nData.motivos_de_perda && Array.isArray(pipeRunData.n8nData.motivos_de_perda)) {
+    } else if (pipeRunData.n8nData && Array.isArray(pipeRunData.n8nData.motivos_de_perda) && pipeRunData.n8nData.motivos_de_perda.length > 0) {
       pipeRunData.n8nData.motivos_de_perda.forEach(motivo => {
         parts.push(`- ${motivo}`);
       });
-    } else {
-      // Fallback para motivos padrão
-      parts.push('- Produto que não Trabalhamos');
-      parts.push('- Cliente longe da loja mais próxima');
-      parts.push('- Cliente informou não ter mais interesse');
-      parts.push('- Sem informações para contato');
-    }
+    } // caso contrário, não imprimir motivos
 
     return parts.join('\n');
   }
