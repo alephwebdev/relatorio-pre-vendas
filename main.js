@@ -916,7 +916,8 @@
         const data = doc.data();
         state.progressData = {
           ...state.progressData,
-          ...data
+          ...data,
+          target: 150 // Garantir que a meta seja sempre 150
         };
         console.log('📈 Dados de progresso carregados:', state.progressData);
       } else {
@@ -927,7 +928,8 @@
           weekStart: currentWeek.start,
           weekEnd: currentWeek.end,
           lastUpdated: Date.now(),
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          target: 150 // Garantir que a meta seja sempre 150
         };
       }
 
@@ -1028,6 +1030,7 @@
       weekEnd: currentWeek.end,
       lastUpdated: Date.now(),
       resetAt: new Date().toISOString(),
+      target: 150, // Garantir que a meta seja sempre 150
       previousWeek: {
         start: previousWeekData.weekStart,
         end: previousWeekData.weekEnd,
@@ -1100,10 +1103,17 @@
     const isCompleted = state.progressData.currentWeekGanhos >= state.progressData.target;
     const wasCompleted = progressBar.classList.contains('completed');
     
+    console.log('📊 Atualizando UI:', {
+      ganhos: state.progressData.currentWeekGanhos,
+      target: state.progressData.target,
+      percentage: percentage.toFixed(1)
+    });
+    
     // Atualizar barra de progresso com animação suave
     setTimeout(() => {
       progressBar.style.width = `${percentage}%`;
       progressBar.setAttribute('aria-valuenow', state.progressData.currentWeekGanhos);
+      progressBar.setAttribute('aria-valuemax', state.progressData.target);
       progressBar.textContent = `${Math.round(percentage)}%`;
     }, 100);
     
