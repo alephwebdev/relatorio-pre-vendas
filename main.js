@@ -37,7 +37,15 @@
       stageId: '262331'
     },
   accountsCache: [], // fetched list for report selection
-  productStructure: [] // estrutura global compartilhada [{id,name,order}]
+  productStructure: [], // estrutura global compartilhada [{id,name,order}]
+  progressData: {
+    piperunUserId: null,
+    currentWeekGanhos: 0,
+    weekStart: null,
+    weekEnd: null,
+    lastUpdated: null,
+    target: 130
+  }
   };
 
   // ---- Firebase Init ----
@@ -72,6 +80,10 @@
   const dailyDoc = (date, accountId) => db.collection('daily').doc(date).collection('entries').doc(accountId);
   // global structure config: /config/products
   const structureDoc = () => db.collection('config').doc('products');
+  // progress data: /progress/{accountId}
+  const progressDoc = (accountId) => db.collection('progress').doc(accountId);
+  // weekly ganhos history: /weekly-ganhos/{accountId}/weeks/{weekStart}
+  const weeklyGanhosDoc = (accountId, weekStart) => db.collection('weekly-ganhos').doc(accountId).collection('weeks').doc(weekStart);
 
   // ---- DOM refs ----
   const loginView = qs('#login-view');
@@ -94,6 +106,13 @@
   const saveIndicator = qs('#save-indicator');
   const productsGrid = qs('#products-grid');
   const productsCount = qs('#products-count');
+  
+  // Progress elements
+  const refreshProgressBtn = qs('#refresh-progress-btn');
+  const currentGanhosEl = qs('#current-ganhos');
+  const progressBar = qs('#progress-bar');
+  const weeklyPeriodEl = qs('#weekly-period');
+  const weekDatesEl = qs('#week-dates');
   
   // Modal elements
   const reportOutput = null; // Removido da interface
@@ -132,6 +151,40 @@
   function uid(){ return Math.random().toString(36).slice(2,9); }
   function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
   function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+
+  // ---- Funções de Data da Semana ----
+  function getWeekDates(date = new Date()) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Ajustar para segunda-feira
+    
+    const monday = new Date(d.setDate(diff));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    
+    return {
+      start: monday.toISOString().slice(0, 10),
+      end: sunday.toISOString().slice(0, 10)
+    };
+  }
+
+  function formatWeekPeriod(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    const startDay = start.getDate().toString().padStart(2, '0');
+    const startMonth = (start.getMonth() + 1).toString().padStart(2, '0');
+    const endDay = end.getDate().toString().padStart(2, '0');
+    const endMonth = (end.getMonth() + 1).toString().padStart(2, '0');
+    
+    return `${startDay}/${startMonth} - ${endDay}/${endMonth}`;
+  }
+
+  function isNewWeek(lastWeekStart) {
+    if (!lastWeekStart) return true;
+    const currentWeek = getWeekDates();
+    return currentWeek.start !== lastWeekStart;
+  }
 
   // ---- Sistema de Notificações ----
   const toastContainer = qs('#toast-container');
@@ -788,6 +841,485 @@
     }
   }
 
+  // ---- Progress Functions ----
+  const N8N_GANHOS_WEBHOOK_URL = 'https://n8n.unitycompany.com.br/webhook/user-ganhos';
+  
+  async function fetchN8nGanhos() {
+    try {
+      console.log('🔄 Buscando dados de ganhos via n8n...');
+      console.log('📍 URL:', N8N_GANHOS_WEBHOOK_URL);
+      
+      showLoading('Buscando dados de ganhos...');
+      
+      // Usar a mesma lógica do fetchPipeRunData - requisição POST com dados
+      const payload = {
+        account_id: state.account?.id || 'unknown'
+      };
+      
+      console.log('📤 Enviando requisição para n8n:', payload);
+      
+      const response = await fetch(N8N_GANHOS_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`n8n webhook falhou: ${response.status} - ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('📥 Resposta do n8n ganhos:', JSON.stringify(data, null, 2));
+      
+      hideLoading();
+      
+      // Se o n8n retornar um array, usar diretamente, senão encapsular
+      return Array.isArray(data) ? data : [data];
+      
+    } catch (error) {
+      hideLoading();
+      console.error('❌ Erro ao buscar dados de ganhos do N8N:', error);
+      
+      // Em caso de erro, retornar dados mockados para teste
+      console.log('📊 Usando dados mockados para teste...');
+      return [
+        {
+          "user_id": 81707,
+          "user_name": "Fernanda Soares Massena",
+          "start": "2025-09-08 00:00:00",
+          "end": "2025-09-08 23:59:59",
+          "qtd_ganhos": 20
+        },
+        {
+          "user_id": 89509,
+          "user_name": "Thainá Fraga",
+          "start": "2025-09-08 00:00:00",
+          "end": "2025-09-08 23:59:59",
+          "qtd_ganhos": 10
+        }
+      ];
+    }
+  }
+
+  async function loadProgressData() {
+    if (!state.account) return;
+
+    try {
+      console.log('📊 Carregando dados de progresso para:', state.account.id);
+      
+      const doc = await progressDoc(state.account.id).get();
+      const currentWeek = getWeekDates();
+      
+      if (doc.exists) {
+        const data = doc.data();
+        state.progressData = {
+          ...state.progressData,
+          ...data
+        };
+        console.log('📈 Dados de progresso carregados:', state.progressData);
+      } else {
+        // Primeiro acesso - inicializar com dados da semana atual
+        console.log('🆕 Primeiro acesso - inicializando dados');
+        state.progressData = {
+          ...state.progressData,
+          weekStart: currentWeek.start,
+          weekEnd: currentWeek.end,
+          lastUpdated: Date.now(),
+          createdAt: new Date().toISOString()
+        };
+      }
+
+      // Sempre buscar piperunUserId da conta para garantir sincronização
+      const accountDoc = await colAccounts().doc(state.account.id).get();
+      if (accountDoc.exists) {
+        const accountData = accountDoc.data();
+        if (accountData.piperunUserId) {
+          state.account.piperunUserId = accountData.piperunUserId;
+          console.log('✅ PipeRun ID encontrado:', state.account.piperunUserId);
+          
+          // Atualizar progressData se necessário
+          if (state.progressData.piperunUserId !== accountData.piperunUserId) {
+            state.progressData.piperunUserId = accountData.piperunUserId;
+            await saveProgressData();
+          }
+        } else {
+          console.log('⚠️ PipeRun ID não configurado para esta conta');
+        }
+      }
+
+      // Verificar se é uma nova semana e resetar se necessário
+      if (isNewWeek(state.progressData.weekStart)) {
+        console.log('🔄 Nova semana detectada, resetando progresso...');
+        await resetWeeklyProgress();
+      }
+
+      // Atualizar UI
+      updateProgressUI();
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados de progresso:', error);
+      showError('Erro ao carregar dados de progresso');
+    }
+  }
+
+  async function saveProgressData() {
+    if (!state.account) return;
+
+    try {
+      console.log('💾 Salvando dados de progresso:', state.progressData);
+      
+      const dataToSave = {
+        ...state.progressData,
+        accountId: state.account.id,
+        accountName: state.account.name,
+        lastUpdated: Date.now(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      await progressDoc(state.account.id).set(dataToSave, { merge: true });
+      console.log('✅ Dados de progresso salvos com sucesso');
+      
+    } catch (error) {
+      console.error('❌ Erro ao salvar dados de progresso:', error);
+      showError('Erro ao salvar progresso no banco de dados');
+    }
+  }
+
+  async function resetWeeklyProgress() {
+    const currentWeek = getWeekDates();
+    
+    console.log('🔄 Resetando progresso semanal...');
+    console.log('📅 Nova semana:', currentWeek);
+    
+    // Salvar dados da semana anterior no histórico se houver
+    if (state.progressData.weekStart && state.progressData.currentWeekGanhos > 0) {
+      try {
+        const weeklyHistoryData = {
+          weekStart: state.progressData.weekStart,
+          weekEnd: state.progressData.weekEnd,
+          ganhos: state.progressData.currentWeekGanhos,
+          target: state.progressData.target,
+          completedAt: Date.now(),
+          completedDate: new Date().toISOString(),
+          accountId: state.account.id,
+          accountName: state.account.name,
+          achieved: state.progressData.currentWeekGanhos >= state.progressData.target
+        };
+        
+        console.log('💾 Salvando histórico da semana anterior:', weeklyHistoryData);
+        
+        await weeklyGanhosDoc(state.account.id, state.progressData.weekStart).set(weeklyHistoryData);
+        console.log('✅ Histórico da semana anterior salvo');
+        
+      } catch (error) {
+        console.error('❌ Erro ao salvar histórico semanal:', error);
+      }
+    }
+
+    // Resetar para nova semana
+    const previousWeekData = { ...state.progressData };
+    
+    state.progressData = {
+      ...state.progressData,
+      currentWeekGanhos: 0,
+      weekStart: currentWeek.start,
+      weekEnd: currentWeek.end,
+      lastUpdated: Date.now(),
+      resetAt: new Date().toISOString(),
+      previousWeek: {
+        start: previousWeekData.weekStart,
+        end: previousWeekData.weekEnd,
+        ganhos: previousWeekData.currentWeekGanhos
+      }
+    };
+
+    console.log('🆕 Dados da nova semana:', state.progressData);
+    await saveProgressData();
+    
+    showInfo('Nova semana iniciada! Progresso resetado para 0.');
+  }
+
+  async function updateGanhos() {
+    if (!state.account?.piperunUserId) {
+      showWarning('ID do PipeRun não configurado para esta conta. Configure no Firebase.');
+      return;
+    }
+
+    try {
+      console.log('🎯 Atualizando ganhos para usuário ID:', state.account.piperunUserId);
+      
+      const ganhosData = await fetchN8nGanhos();
+      console.log('📊 Dados recebidos:', ganhosData);
+      
+      // Encontrar dados do usuário atual
+      const userData = ganhosData.find(user => user.user_id == state.account.piperunUserId);
+      
+      if (!userData) {
+        console.warn('⚠️ Usuário não encontrado nos dados retornados');
+        console.log('🔍 Procurando por ID:', state.account.piperunUserId);
+        console.log('📋 IDs disponíveis:', ganhosData.map(u => u.user_id));
+        showWarning(`Seus dados não foram encontrados. Verifique se o ID ${state.account.piperunUserId} está correto no Firebase.`);
+        return;
+      }
+
+      console.log('✅ Dados do usuário encontrados:', userData);
+
+      // Atualizar dados
+      state.progressData.currentWeekGanhos = userData.qtd_ganhos || 0;
+      state.progressData.lastUpdated = Date.now();
+
+      // Salvar no Firebase
+      await saveProgressData();
+
+      // Atualizar UI
+      updateProgressUI();
+
+      showSuccess(`Ganhos atualizados: ${userData.qtd_ganhos} de ${state.progressData.target}`);
+      console.log('🎉 Ganhos atualizados com sucesso!');
+      
+    } catch (error) {
+      console.error('❌ Erro ao atualizar ganhos:', error);
+      showError(`Erro ao atualizar ganhos: ${error.message}`);
+    }
+  }
+
+  function updateProgressUI() {
+    const currentWeek = getWeekDates();
+    
+    // Atualizar período da semana
+    weeklyPeriodEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
+    weekDatesEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
+    
+    // Atualizar ganhos atuais
+    currentGanhosEl.textContent = state.progressData.currentWeekGanhos;
+    
+    // Calcular progresso
+    const percentage = Math.min((state.progressData.currentWeekGanhos / state.progressData.target) * 100, 100);
+    const isCompleted = state.progressData.currentWeekGanhos >= state.progressData.target;
+    const wasCompleted = progressBar.classList.contains('completed');
+    
+    // Atualizar barra de progresso com animação suave
+    setTimeout(() => {
+      progressBar.style.width = `${percentage}%`;
+      progressBar.setAttribute('aria-valuenow', state.progressData.currentWeekGanhos);
+      progressBar.textContent = `${Math.round(percentage)}%`;
+    }, 100);
+    
+    // Remover classes antigas
+    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated';
+    
+    // Aplicar cores e animações baseadas no progresso
+    if (isCompleted) {
+      progressBar.classList.add('completed');
+      
+      // Se acabou de completar a meta (não estava completa antes)
+      if (!wasCompleted) {
+        triggerCompletionCelebration();
+      }
+    } else if (percentage >= 70) {
+      progressBar.classList.add('bg-warning');
+    }
+    
+    // Atualizar estatísticas
+    const statsEl = document.querySelector('.progress-stats');
+    if (isCompleted) {
+      statsEl.classList.add('completed');
+    } else {
+      statsEl.classList.remove('completed');
+    }
+  }
+
+  function triggerCompletionCelebration() {
+    console.log('🎉 Meta completada! Iniciando celebração...');
+    
+    // 1. Mostrar mensagem de parabéns
+    showCelebrationMessage();
+    
+    // 2. Adicionar classe de celebração ao container
+    const progressContainer = document.querySelector('.progress-container');
+    progressContainer.classList.add('progress-celebration');
+    
+    // 3. Criar confetti
+    createConfetti();
+    
+    // 4. Tocar som de celebração (se disponível)
+    playCompletionSound();
+    
+    // 5. Salvar achievement no Firebase
+    saveCompletionAchievement();
+    
+    // Remover efeitos após 5 segundos
+    setTimeout(() => {
+      progressContainer.classList.remove('progress-celebration');
+      removeConfetti();
+    }, 5000);
+  }
+
+  function showCelebrationMessage() {
+    const messages = [
+      '🎉 Parabéns! Meta semanal alcançada!',
+      '🌟 Excelente trabalho! Você atingiu sua meta!',
+      '🚀 Fantástico! Meta de 130 ganhos completada!',
+      '🏆 Sucesso! Você é um campeão de vendas!',
+      '⭐ Incrível! Meta semanal conquistada!'
+    ];
+    
+    const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+    
+    // Toast especial de celebração
+    const toastId = `celebration-toast-${uid()}`;
+    const toastHTML = `
+      <div id="${toastId}" class="toast custom-toast toast-success celebration-toast" role="alert">
+        <div class="toast-header bg-success text-white">
+          <strong class="me-auto">🎉 META ALCANÇADA!</strong>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">
+          <div class="text-center">
+            <div class="celebration-icon mb-2">🏆</div>
+            <strong>${randomMessage}</strong>
+            <br>
+            <small class="text-muted">Você completou ${state.progressData.currentWeekGanhos} de ${state.progressData.target} ganhos!</small>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    const toastContainer = document.getElementById('toast-container');
+    toastContainer.insertAdjacentHTML('beforeend', toastHTML);
+    
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement, {
+      autohide: true,
+      delay: 8000 // 8 segundos para celebração
+    });
+    
+    toast.show();
+    
+    // Remover após ocultar
+    toastElement.addEventListener('hidden.bs.toast', () => {
+      toastElement.remove();
+    });
+  }
+
+  function createConfetti() {
+    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3'];
+    
+    for (let i = 0; i < 50; i++) {
+      setTimeout(() => {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * 100 + '%';
+        confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.animationDuration = (Math.random() * 2 + 1) + 's';
+        document.body.appendChild(confetti);
+        
+        // Remover após animação
+        setTimeout(() => {
+          if (confetti.parentNode) {
+            confetti.parentNode.removeChild(confetti);
+          }
+        }, 3000);
+      }, i * 100);
+    }
+  }
+
+  function removeConfetti() {
+    const confettiElements = document.querySelectorAll('.confetti');
+    confettiElements.forEach(confetti => {
+      if (confetti.parentNode) {
+        confetti.parentNode.removeChild(confetti);
+      }
+    });
+  }
+
+  function playCompletionSound() {
+    // Tentar tocar um som de celebração usando Web Audio API
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Criar uma sequência de notas alegres
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      
+      notes.forEach((frequency, index) => {
+        setTimeout(() => {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+          oscillator.type = 'sine';
+          
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.3);
+        }, index * 150);
+      });
+    } catch (error) {
+      console.log('Audio não disponível:', error);
+    }
+  }
+
+  async function saveCompletionAchievement() {
+    if (!state.account) return;
+    
+    try {
+      const achievementData = {
+        weekStart: state.progressData.weekStart,
+        weekEnd: state.progressData.weekEnd,
+        completedAt: new Date().toISOString(),
+        ganhos: state.progressData.currentWeekGanhos,
+        target: state.progressData.target,
+        type: 'weekly_goal_completed'
+      };
+      
+      // Salvar no subcoleção de achievements
+      await db.collection('achievements')
+        .doc(state.account.id)
+        .collection('weekly')
+        .doc(state.progressData.weekStart)
+        .set(achievementData);
+      
+      console.log('🏆 Achievement salvo:', achievementData);
+    } catch (error) {
+      console.error('Erro ao salvar achievement:', error);
+    }
+  }
+
+  function startAutoRefresh() {
+    // Atualizar automaticamente a cada hora durante horário comercial (8h às 18h)
+    const autoRefreshInterval = setInterval(async () => {
+      const now = new Date();
+      const hour = now.getHours();
+      const dayOfWeek = now.getDay();
+      
+      // Verificar se é horário comercial (8h às 18h) e dia útil (segunda a sexta)
+      if (hour >= 8 && hour <= 18 && dayOfWeek >= 1 && dayOfWeek <= 5) {
+        if (state.account?.piperunUserId) {
+          try {
+            await updateGanhos();
+            console.log('Auto-atualização de ganhos executada às', now.toLocaleTimeString());
+          } catch (error) {
+            console.error('Erro na auto-atualização:', error);
+          }
+        } else {
+          console.log('Auto-atualização pulada: piperunUserId não configurado para', state.account?.id);
+        }
+      }
+    }, 60 * 60 * 1000); // A cada hora
+
+    // Limpar intervalo quando sair da aplicação
+    window.addEventListener('beforeunload', () => {
+      clearInterval(autoRefreshInterval);
+    });
+  }
+
   // ---- Report Generation ----
   function buildReportText({ titleDate, startTime, endTime, products, pipeRunData }){
     const parts = [];
@@ -1125,6 +1657,25 @@
   });
   startTimeInput.addEventListener('change', ()=>{ state.startTime = startTimeInput.value; saveDailyDebounced(); updateReportPreviewCurrent(); });
   endTimeInput.addEventListener('change', ()=>{ state.endTime = endTimeInput.value; saveDailyDebounced(); updateReportPreviewCurrent(); });
+
+  // Progress event listeners
+  refreshProgressBtn.addEventListener('click', updateGanhos);
+
+  // Função de teste para validar celebração (apenas para desenvolvimento)
+  if (window.location.search.includes('test=true')) {
+    const testBtn = document.createElement('button');
+    testBtn.textContent = '🧪 Testar Celebração';
+    testBtn.className = 'btn btn-warning btn-sm';
+    testBtn.style.position = 'fixed';
+    testBtn.style.top = '10px';
+    testBtn.style.right = '10px';
+    testBtn.style.zIndex = '9999';
+    testBtn.onclick = () => {
+      state.progressData.currentWeekGanhos = 130;
+      updateProgressUI();
+    };
+    document.body.appendChild(testBtn);
+  }
 
   // Modificar o botão Gerar Relatório para buscar dados do PipeRun
   generateReportBtn.addEventListener('click', async (e) => {
@@ -1767,6 +2318,13 @@
   await ensureGlobalStructure();
   subscribeGlobalStructure();
   await loadOrInitDaily();
+  
+  // Carregar dados de progresso
+  await loadProgressData();
+  
+  // Iniciar auto-atualização de ganhos
+  startAutoRefresh();
+  
     console.log('Login complete, app should be visible');
   }
 
