@@ -44,7 +44,7 @@
     weekStart: null,
     weekEnd: null,
     lastUpdated: null,
-    target: 130
+    target: 150
   }
   };
 
@@ -1671,7 +1671,7 @@
     testBtn.style.right = '10px';
     testBtn.style.zIndex = '9999';
     testBtn.onclick = () => {
-      state.progressData.currentWeekGanhos = 130;
+      state.progressData.currentWeekGanhos = 150;
       updateProgressUI();
     };
     document.body.appendChild(testBtn);

@@ -54,6 +54,11 @@ accounts/
 - Fernanda Soares Massena: 81707
 - Thainá Fraga: 89509
 
+### Exemplo de implementação:
+- Meta semanal: 150 ganhos
+- Período: Segunda 00:00 às Domingo 23:59
+- Reset automático toda semana
+
 ## Como o sistema funciona:
 
 1. **Busca automática**: O sistema busca o `piperunUserId` da conta do usuário automaticamente
@@ -87,7 +92,7 @@ accounts/
 
 ## Meta semanal:
 
-- **Objetivo**: 130 ganhos por semana
+- **Objetivo**: 150 ganhos por semana
 - **Período**: De segunda-feira 00:00 até domingo 23:59
 - **Reset**: Automático todo domingo à meia-noite
 
