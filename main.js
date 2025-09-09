@@ -44,7 +44,9 @@
     weekStart: null,
     weekEnd: null,
     lastUpdated: null,
-    target: 150
+    target: 150,
+    dailyGanhos: {}, // { "2025-09-09": 35, "2025-09-10": 4, ... }
+    weekDates: [] // ["2025-09-09", "2025-09-10", "2025-09-11", ...]
   }
   };
 
@@ -84,6 +86,8 @@
   const progressDoc = (accountId) => db.collection('progress').doc(accountId);
   // weekly ganhos history: /weekly-ganhos/{accountId}/weeks/{weekStart}
   const weeklyGanhosDoc = (accountId, weekStart) => db.collection('weekly-ganhos').doc(accountId).collection('weeks').doc(weekStart);
+  // daily ganhos: /daily-ganhos/{accountId}/days/{date}
+  const dailyGanhosDoc = (accountId, date) => db.collection('daily-ganhos').doc(accountId).collection('days').doc(date);
 
   // ---- DOM refs ----
   const loginView = qs('#login-view');
@@ -113,6 +117,9 @@
   const progressBar = qs('#progress-bar');
   const weeklyPeriodEl = qs('#weekly-period');
   const weekDatesEl = qs('#week-dates');
+  const dailyDetailsEl = qs('#daily-details');
+  const dailyBreakdownEl = qs('#daily-breakdown');
+  const toggleDailyDetailsBtn = qs('#toggle-daily-details');
   
   // Modal elements
   const reportOutput = null; // Removido da interface
@@ -184,6 +191,29 @@
     if (!lastWeekStart) return true;
     const currentWeek = getWeekDates();
     return currentWeek.start !== lastWeekStart;
+  }
+
+  function getWeekWorkDays(weekStart) {
+    // Retorna array com as datas de segunda a sábado
+    const startDate = new Date(weekStart);
+    const dates = [];
+    
+    for (let i = 0; i < 6; i++) { // Segunda a sábado (6 dias)
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      dates.push(date.toISOString().slice(0, 10));
+    }
+    
+    return dates;
+  }
+
+  function calculateWeekTotal(dailyGanhos, weekDates) {
+    // Soma todos os ganhos dos dias da semana
+    let total = 0;
+    for (const date of weekDates) {
+      total += dailyGanhos[date] || 0;
+    }
+    return total;
   }
 
   // ---- Sistema de Notificações ----
@@ -844,17 +874,56 @@
   // ---- Progress Functions ----
   const N8N_GANHOS_WEBHOOK_URL = 'https://n8n.unitycompany.com.br/webhook/user-ganhos';
   
-  async function fetchN8nGanhos() {
+  // Função para calcular período da semana (segunda até hoje)
+  function getWeekPeriod(referenceDate = null) {
+    const today = referenceDate ? new Date(referenceDate) : new Date();
+    const currentDay = today.getDay(); // 0 = domingo, 1 = segunda, ..., 6 = sábado
+    
+    // Calcular segunda-feira da semana
+    const monday = new Date(today);
+    const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1; // Se domingo, voltar 6 dias
+    monday.setDate(today.getDate() - daysFromMonday);
+    monday.setHours(0, 0, 0, 0);
+    
+    // Usar hoje como data final (não sábado)
+    const endDate = new Date(today);
+    endDate.setHours(23, 59, 59, 999);
+    
+    return {
+      start: monday.toISOString().slice(0, 19).replace('T', ' '), // "2025-09-08 00:00:00"
+      end: endDate.toISOString().slice(0, 19).replace('T', ' '),   // "2025-09-09 23:59:59"
+      day: today.toISOString().slice(0, 10) // "2025-09-09"
+    };
+  }
+  
+  async function fetchN8nGanhos(targetDate = null) {
     try {
-      console.log('🔄 Buscando dados de ganhos via n8n...');
+      const dateToFetch = targetDate || todayISO();
+      console.log('🔄 Buscando dados de ganhos via n8n para:', dateToFetch);
       console.log('📍 URL:', N8N_GANHOS_WEBHOOK_URL);
       
-      showLoading('Buscando dados de ganhos...');
+      showLoading(`Buscando dados de ganhos${targetDate ? ` de ${targetDate}` : ''}...`);
       
-      // Usar a mesma lógica do fetchPipeRunData - requisição POST com dados
+      // Calcular segunda-feira da semana atual (corrigindo timezone)
+      const date = new Date(dateToFetch + 'T12:00:00'); // Adicionar horário para evitar problemas de timezone
+      const dayOfWeek = date.getDay(); // 0=domingo, 1=segunda, 2=terça...
+      const monday = new Date(date);
+      const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Se domingo, voltar 6 dias
+      monday.setDate(date.getDate() - daysFromMonday);
+      const mondayStr = monday.toISOString().slice(0, 10); // "2025-09-08"
+      
+      // SEMPRE enviar de segunda-feira até hoje (não até sábado)
       const payload = {
-        account_id: state.account?.id || 'unknown'
+        day: dateToFetch,
+        start: `${mondayStr} 00:00:00`,    // Sempre segunda-feira
+        end: `${dateToFetch} 23:59:59`,    // Até hoje
+        pipeline_id: 45772
       };
+      
+      console.log('� Enviando requisição para n8n:', payload);
+      console.log('� URL:', N8N_GANHOS_WEBHOOK_URL);
+      
+
       
       console.log('📤 Enviando requisição para n8n:', payload);
       
@@ -882,24 +951,59 @@
       hideLoading();
       console.error('❌ Erro ao buscar dados de ganhos do N8N:', error);
       
-      // Em caso de erro, retornar dados mockados para teste
+      // Em caso de erro, retornar dados mockados baseados na data
       console.log('📊 Usando dados mockados para teste...');
-      return [
-        {
-          "user_id": 81707,
-          "user_name": "Fernanda Soares Massena",
-          "start": "2025-09-08 00:00:00",
-          "end": "2025-09-08 23:59:59",
-          "qtd_ganhos": 20
-        },
-        {
-          "user_id": 89509,
-          "user_name": "Thainá Fraga",
-          "start": "2025-09-08 00:00:00",
-          "end": "2025-09-08 23:59:59",
-          "qtd_ganhos": 10
-        }
-      ];
+      if (targetDate === '2025-09-08') {
+        // Dados de ontem que você forneceu
+        return [
+          {
+            "user_id": 81707,
+            "user_name": "Fernanda Soares Massena",
+            "start": "2025-09-08 00:00:00",
+            "end": "2025-09-08 23:59:59",
+            "qtd_ganhos": 34
+          },
+          {
+            "user_id": 89509,
+            "user_name": "Thainá Fraga",
+            "start": "2025-09-08 00:00:00",
+            "end": "2025-09-08 23:59:59",
+            "qtd_ganhos": 15
+          },
+          {
+            "user_id": 91749,
+            "user_name": "Mirela Souza",
+            "start": "2025-09-08 00:00:00",
+            "end": "2025-09-08 23:59:59",
+            "qtd_ganhos": 0
+          }
+        ];
+      } else {
+        // Dados de hoje (acumulado segunda + terça = 39, 20, 0)
+        return [
+          {
+            "user_id": 81707,
+            "user_name": "Fernanda Soares Massena",
+            "start": "2025-09-08 00:00:00",
+            "end": "2025-09-09 23:59:59",
+            "qtd_ganhos": 39
+          },
+          {
+            "user_id": 89509,
+            "user_name": "Thainá Fraga",
+            "start": "2025-09-08 00:00:00",
+            "end": "2025-09-09 23:59:59",
+            "qtd_ganhos": 20
+          },
+          {
+            "user_id": 91749,
+            "user_name": "Mirela Souza",
+            "start": "2025-09-08 00:00:00",
+            "end": "2025-09-09 23:59:59",
+            "qtd_ganhos": 0
+          }
+        ];
+      }
     }
   }
 
@@ -914,12 +1018,51 @@
       
       if (doc.exists) {
         const data = doc.data();
-        state.progressData = {
-          ...state.progressData,
-          ...data,
-          target: 150 // Garantir que a meta seja sempre 150
-        };
-        console.log('📈 Dados de progresso carregados:', state.progressData);
+        
+        // 🔍 VERIFICAR SE É UMA NOVA SEMANA (LÓGICA INTELIGENTE)
+        const savedWeekStart = data.weekStart;
+        const isNewWeek = savedWeekStart !== currentWeek.start;
+        
+        if (isNewWeek) {
+          console.log('🔄 NOVA SEMANA DETECTADA!');
+          console.log('📅 Semana anterior:', savedWeekStart);
+          console.log('📅 Semana atual:', currentWeek.start);
+          
+          // Salvar dados da semana anterior no histórico
+          if (data.currentWeekGanhos > 0) {
+            await saveWeekToHistory(data);
+            console.log('💾 Dados da semana anterior salvos no histórico');
+          }
+          
+          // Resetar para nova semana
+          state.progressData = {
+            weekStart: currentWeek.start,
+            weekEnd: currentWeek.end,
+            currentWeekGanhos: 0,
+            lastUpdated: Date.now(),
+            target: 150,
+            dailyGanhos: {},
+            weekDates: getWeekWorkDays(currentWeek.start),
+            achievements: data.achievements || [],
+            totalWeeksCompleted: (data.totalWeeksCompleted || 0) + (data.currentWeekGanhos >= 150 ? 1 : 0)
+          };
+          
+          console.log('✨ SEMANA RESETADA - Começando do zero!');
+          showInfo('🆕 Nova semana iniciada! Dados resetados.');
+          
+        } else {
+          // Mesma semana - carregar dados normalmente
+          state.progressData = {
+            ...state.progressData,
+            ...data,
+            target: 150 // Garantir que a meta seja sempre 150
+          };
+          console.log('📈 Dados da semana atual carregados:', {
+            currentWeekGanhos: state.progressData.currentWeekGanhos,
+            lastUpdated: state.progressData.lastUpdated ? new Date(state.progressData.lastUpdated).toLocaleString() : 'Nunca',
+            weekStart: state.progressData.weekStart
+          });
+        }
       } else {
         // Primeiro acesso - inicializar com dados da semana atual
         console.log('🆕 Primeiro acesso - inicializando dados');
@@ -929,8 +1072,15 @@
           weekEnd: currentWeek.end,
           lastUpdated: Date.now(),
           createdAt: new Date().toISOString(),
-          target: 150 // Garantir que a meta seja sempre 150
+          target: 150, // Garantir que a meta seja sempre 150
+          dailyGanhos: {},
+          weekDates: getWeekWorkDays(currentWeek.start)
         };
+      }
+
+      // Garantir que weekDates está atualizado
+      if (!state.progressData.weekDates || state.progressData.weekDates.length === 0) {
+        state.progressData.weekDates = getWeekWorkDays(state.progressData.weekStart);
       }
 
       // Sempre buscar piperunUserId da conta para garantir sincronização
@@ -955,6 +1105,26 @@
       if (isNewWeek(state.progressData.weekStart)) {
         console.log('🔄 Nova semana detectada, resetando progresso...');
         await resetWeeklyProgress();
+      }
+
+      // Carregar ganhos diários da semana atual
+      await loadWeeklyDailyGanhos();
+      
+      // Tentar recuperar dados históricos faltantes
+      await backfillMissingDays();
+      
+      // IMPORTANTE: Só recalcular se não temos dados frescos do N8N
+      // Se currentWeekGanhos > 0 e foi atualizado recentemente, usar os dados existentes
+      const agora = Date.now();
+      const ultimaAtualizacao = state.progressData.lastUpdated || 0;
+      const tempoDesdeUltimaAtualizacao = agora - ultimaAtualizacao;
+      const umDiaEmMs = 24 * 60 * 60 * 1000;
+      
+      if (state.progressData.currentWeekGanhos === 0 || tempoDesdeUltimaAtualizacao > umDiaEmMs) {
+        console.log('🧮 Recalculando total pois dados podem estar desatualizados');
+        await recalculateWeekTotal();
+      } else {
+        console.log('✅ Usando dados existentes (atualizados recentemente):', state.progressData.currentWeekGanhos);
       }
 
       // Atualizar UI
@@ -1031,10 +1201,13 @@
       lastUpdated: Date.now(),
       resetAt: new Date().toISOString(),
       target: 150, // Garantir que a meta seja sempre 150
+      dailyGanhos: {}, // Resetar ganhos diários
+      weekDates: getWeekWorkDays(currentWeek.start), // Novas datas da semana
       previousWeek: {
         start: previousWeekData.weekStart,
         end: previousWeekData.weekEnd,
-        ganhos: previousWeekData.currentWeekGanhos
+        ganhos: previousWeekData.currentWeekGanhos,
+        dailyGanhos: previousWeekData.dailyGanhos || {}
       }
     };
 
@@ -1054,7 +1227,7 @@
       console.log('🎯 Atualizando ganhos para usuário ID:', state.account.piperunUserId);
       
       const ganhosData = await fetchN8nGanhos();
-      console.log('📊 Dados recebidos:', ganhosData);
+      console.log('📊 Dados recebidos do N8N:', ganhosData);
       
       // Encontrar dados do usuário atual
       const userData = ganhosData.find(user => user.user_id == state.account.piperunUserId);
@@ -1069,17 +1242,31 @@
 
       console.log('✅ Dados do usuário encontrados:', userData);
 
-      // Atualizar dados
-      state.progressData.currentWeekGanhos = userData.qtd_ganhos || 0;
-      state.progressData.lastUpdated = Date.now();
+      // IMPORTANTE: O N8N retorna dados ACUMULADOS de segunda até hoje
+      // Não são ganhos apenas de hoje, mas o total da semana até hoje
+      const today = todayISO();
+      const ganhosAcumulados = userData.qtd_ganhos || 0;
+      
+      console.log(`📅 Ganhos ACUMULADOS da semana até hoje (${today}):`, ganhosAcumulados);
 
-      // Salvar no Firebase
-      await saveProgressData();
+      // Atualizar com o total acumulado da semana (não apenas hoje)
+      // O N8N já nos dá o total semanal, então usamos diretamente
+      state.progressData.currentWeekGanhos = ganhosAcumulados;
+      state.progressData.lastUpdated = Date.now(); // Timestamp importante para evitar recálculos
+      state.progressData.lastN8nUpdate = new Date().toISOString(); // Registro da última atualização N8N
+      
+      // Salvar dados atualizados no Firebase
+      await progressDoc(state.account.id).set(state.progressData, { merge: true });
+      
+      console.log('💾 Dados salvos no Firebase:', {
+        currentWeekGanhos: state.progressData.currentWeekGanhos,
+        lastUpdated: new Date(state.progressData.lastUpdated).toLocaleString()
+      });
 
       // Atualizar UI
       updateProgressUI();
 
-      showSuccess(`Ganhos atualizados: ${userData.qtd_ganhos} de ${state.progressData.target}`);
+      showSuccess(`Total da semana: ${ganhosAcumulados} de ${state.progressData.target} ganhos`);
       console.log('🎉 Ganhos atualizados com sucesso!');
       
     } catch (error) {
@@ -1088,15 +1275,259 @@
     }
   }
 
+  async function saveDailyGanhos(date, ganhos) {
+    if (!state.account) return;
+
+    try {
+      console.log(`💾 Salvando ganhos do dia ${date}:`, ganhos);
+      
+      const dailyData = {
+        date: date,
+        ganhos: ganhos,
+        accountId: state.account.id,
+        accountName: state.account.name,
+        updatedAt: new Date().toISOString(),
+        weekStart: state.progressData.weekStart,
+        weekEnd: state.progressData.weekEnd
+      };
+
+      // Salvar no Firebase
+      await dailyGanhosDoc(state.account.id, date).set(dailyData);
+      
+      // Atualizar estado local
+      state.progressData.dailyGanhos[date] = ganhos;
+      state.progressData.lastUpdated = Date.now();
+
+      console.log('✅ Ganhos diários salvos com sucesso');
+      
+    } catch (error) {
+      console.error('❌ Erro ao salvar ganhos diários:', error);
+      throw error;
+    }
+  }
+
+  async function loadWeeklyDailyGanhos() {
+    if (!state.account || !state.progressData.weekDates) return;
+
+    try {
+      console.log('📊 Carregando ganhos diários da semana...');
+      
+      const promises = state.progressData.weekDates.map(async (date) => {
+        const doc = await dailyGanhosDoc(state.account.id, date).get();
+        if (doc.exists) {
+          const data = doc.data();
+          return { date, ganhos: data.ganhos || 0 };
+        }
+        return { date, ganhos: 0 };
+      });
+
+      const results = await Promise.all(promises);
+      
+      // Atualizar estado local
+      state.progressData.dailyGanhos = {};
+      for (const result of results) {
+        state.progressData.dailyGanhos[result.date] = result.ganhos;
+      }
+
+      console.log('📈 Ganhos diários carregados:', state.progressData.dailyGanhos);
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar ganhos diários:', error);
+    }
+  }
+
+  async function recalculateWeekTotal() {
+    // Recalcular total baseado nos ganhos diários
+    const total = calculateWeekTotal(state.progressData.dailyGanhos, state.progressData.weekDates);
+    
+    console.log('🧮 Recalculando total da semana:', {
+      dailyGanhos: state.progressData.dailyGanhos,
+      weekDates: state.progressData.weekDates,
+      total: total
+    });
+
+    state.progressData.currentWeekGanhos = total;
+    state.progressData.lastUpdated = Date.now();
+
+    // Salvar progresso atualizado
+    await saveProgressData();
+  }
+
+  async function backfillMissingDays() {
+    if (!state.account?.piperunUserId || !state.progressData.weekDates) return;
+
+    console.log('🔍 Verificando dias faltantes da semana...');
+    
+    const today = todayISO();
+    const missingDays = [];
+    
+    // Verificar quais dias da semana atual não temos dados
+    for (const date of state.progressData.weekDates) {
+      // Só verificar dias até hoje (não buscar dias futuros)
+      if (date <= today && !(date in state.progressData.dailyGanhos)) {
+        missingDays.push(date);
+      }
+    }
+    
+    if (missingDays.length === 0) {
+      console.log('✅ Todos os dias da semana já têm dados');
+      return;
+    }
+    
+    console.log('📅 Dias faltantes encontrados:', missingDays);
+    showInfo(`Recuperando dados de ${missingDays.length} dia(s) faltante(s)...`);
+    
+    // Buscar dados para cada dia faltante
+    for (const date of missingDays) {
+      try {
+        console.log(`🔄 Buscando dados para ${date}...`);
+        
+        const ganhosData = await fetchN8nGanhos(date);
+        const userData = ganhosData.find(user => user.user_id == state.account.piperunUserId);
+        
+        if (userData) {
+          const ganhos = userData.qtd_ganhos || 0;
+          console.log(`✅ Dados encontrados para ${date}: ${ganhos} ganhos`);
+          
+          // Salvar dados do dia
+          await saveDailyGanhos(date, ganhos);
+        } else {
+          console.log(`⚠️ Dados não encontrados para ${date}, assumindo 0 ganhos`);
+          await saveDailyGanhos(date, 0);
+        }
+        
+        // Aguardar um pouco entre requisições para não sobrecarregar o N8N
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`❌ Erro ao buscar dados para ${date}:`, error);
+        // Em caso de erro, assumir 0 ganhos para este dia
+        await saveDailyGanhos(date, 0);
+      }
+    }
+    
+    // Recalcular total após buscar todos os dias
+    await recalculateWeekTotal();
+    updateProgressUI();
+    
+    showSuccess(`Dados históricos recuperados! Total da semana: ${state.progressData.currentWeekGanhos}`);
+  }
+
+  // Função para salvar semana anterior no histórico
+  async function saveWeekToHistory(weekData) {
+    try {
+      const historyRef = db.collection('weekly-history').doc();
+      const historyData = {
+        accountId: state.account.id,
+        accountName: state.account.name,
+        weekStart: weekData.weekStart,
+        weekEnd: weekData.weekEnd,
+        totalGanhos: weekData.currentWeekGanhos,
+        target: weekData.target || 150,
+        targetAchieved: weekData.currentWeekGanhos >= (weekData.target || 150),
+        dailyGanhos: weekData.dailyGanhos || {},
+        savedAt: new Date().toISOString(),
+        weekNumber: getWeekNumber(new Date(weekData.weekStart))
+      };
+      
+      await historyRef.set(historyData);
+      console.log('📚 Semana salva no histórico:', historyData);
+      
+    } catch (error) {
+      console.error('❌ Erro ao salvar histórico:', error);
+    }
+  }
+  
+  // Função para obter número da semana do ano
+  function getWeekNumber(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+  }
+
+  // Função para determinar o status inteligente da semana
+  function getWeeklyStatus() {
+    const hoje = new Date();
+    const diaSemana = hoje.getDay(); // 0=dom, 1=seg, 2=ter, 3=qua, 4=qui, 5=sex, 6=sab
+    
+    let message = '';
+    let daysRemaining = 0;
+    let isWeekEnd = false;
+    
+    switch(diaSemana) {
+      case 0: // Domingo
+        message = 'Semana encerrada • Nova semana inicia amanhã';
+        isWeekEnd = true;
+        break;
+      case 1: // Segunda
+        message = 'Início da semana • Dados sendo acumulados';
+        daysRemaining = 5; // seg, ter, qua, qui, sex, sab
+        break;
+      case 2: // Terça
+        message = 'Dados acumulados desde segunda-feira';
+        daysRemaining = 4;
+        break;
+      case 3: // Quarta
+        message = 'Meio da semana • Continue firme!';
+        daysRemaining = 3;
+        break;
+      case 4: // Quinta
+        message = 'Reta final da semana se aproximando';
+        daysRemaining = 2;
+        break;
+      case 5: // Sexta
+        message = 'Último dia útil • Meta quase lá!';
+        daysRemaining = 1;
+        break;
+      case 6: // Sábado
+        message = 'Último dia da semana • Resultado final';
+        daysRemaining = 0;
+        break;
+    }
+    
+    return {
+      message,
+      daysRemaining,
+      isWeekEnd,
+      dayOfWeek: diaSemana
+    };
+  }
+
   function updateProgressUI() {
     const currentWeek = getWeekDates();
+    const hoje = new Date();
+    const diaSemana = hoje.getDay(); // 0=dom, 1=seg, 2=ter...
+    const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
     
     // Atualizar período da semana
     weeklyPeriodEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
     weekDatesEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
     
-    // Atualizar ganhos atuais
+    // Mostrar informações detalhadas do status semanal
+    const statusInfo = getWeeklyStatus();
+    
+    // Atualizar ganhos atuais com mais contexto
     currentGanhosEl.textContent = state.progressData.currentWeekGanhos;
+    
+    // Adicionar informação de status no título
+    const progressSection = document.querySelector('.progress-section');
+    if (progressSection) {
+      let statusBadge = progressSection.querySelector('.status-badge');
+      if (!statusBadge) {
+        statusBadge = document.createElement('div');
+        statusBadge.className = 'status-badge';
+        progressSection.querySelector('.progress-header').appendChild(statusBadge);
+      }
+      
+      statusBadge.innerHTML = `
+        <small class="text-muted">
+          📅 ${diasSemana[diaSemana]} • ${statusInfo.message}
+          ${statusInfo.daysRemaining > 0 ? `• ${statusInfo.daysRemaining} dias restantes` : ''}
+        </small>
+      `;
+    }
     
     // Calcular progresso
     const percentage = Math.min((state.progressData.currentWeekGanhos / state.progressData.target) * 100, 100);
@@ -1106,7 +1537,9 @@
     console.log('📊 Atualizando UI:', {
       ganhos: state.progressData.currentWeekGanhos,
       target: state.progressData.target,
-      percentage: percentage.toFixed(1)
+      percentage: percentage.toFixed(1),
+      diaSemana: diasSemana[diaSemana],
+      status: statusInfo
     });
     
     // Atualizar barra de progresso com animação suave
@@ -1139,6 +1572,36 @@
     } else {
       statsEl.classList.remove('completed');
     }
+    
+    // Atualizar detalhes diários
+    updateDailyBreakdown();
+  }
+
+  function updateDailyBreakdown() {
+    if (!dailyBreakdownEl || !state.progressData.weekDates) return;
+    
+    const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const today = todayISO();
+    
+    dailyBreakdownEl.innerHTML = '';
+    
+    state.progressData.weekDates.forEach((date, index) => {
+      const ganhos = state.progressData.dailyGanhos[date] || 0;
+      const isToday = date === today;
+      const isWeekend = index >= 5; // Sábado é índice 5
+      
+      const dayEl = document.createElement('div');
+      dayEl.className = 'col-2';
+      dayEl.innerHTML = `
+        <div class="daily-item ${isToday ? 'today' : ''} ${isWeekend ? 'weekend' : ''}">
+          <div class="day-name">${weekdays[index]}</div>
+          <div class="day-ganhos">${ganhos}</div>
+          <div class="day-date">${date.split('-')[2]}</div>
+        </div>
+      `;
+      
+      dailyBreakdownEl.appendChild(dayEl);
+    });
   }
 
   function triggerCompletionCelebration() {
@@ -1309,24 +1772,46 @@
       const hour = now.getHours();
       const dayOfWeek = now.getDay();
       
-      // Verificar se é horário comercial (8h às 18h) e dia útil (segunda a sexta)
-      if (hour >= 8 && hour <= 18 && dayOfWeek >= 1 && dayOfWeek <= 5) {
+      // Verificar se é horário comercial (8h às 18h) e dia útil (segunda a sábado)
+      if (hour >= 8 && hour <= 18 && dayOfWeek >= 1 && dayOfWeek <= 6) {
         if (state.account?.piperunUserId) {
           try {
+            // Verificar se é uma nova semana antes de atualizar
+            await loadProgressData();
             await updateGanhos();
-            console.log('Auto-atualização de ganhos executada às', now.toLocaleTimeString());
+            console.log('🔄 Auto-atualização executada às', now.toLocaleTimeString());
           } catch (error) {
-            console.error('Erro na auto-atualização:', error);
+            console.error('❌ Erro na auto-atualização:', error);
           }
         } else {
-          console.log('Auto-atualização pulada: piperunUserId não configurado para', state.account?.id);
+          console.log('⏭️ Auto-atualização pulada: piperunUserId não configurado para', state.account?.id);
         }
       }
     }, 60 * 60 * 1000); // A cada hora
 
-    // Limpar intervalo quando sair da aplicação
+    // Também fazer uma atualização mais frequente para o dia atual (a cada 15 minutos)
+    const frequentRefreshInterval = setInterval(async () => {
+      const now = new Date();
+      const hour = now.getHours();
+      const dayOfWeek = now.getDay();
+      
+      // Durante horário comercial em dias úteis, atualizar a cada 15 minutos
+      if (hour >= 8 && hour <= 18 && dayOfWeek >= 1 && dayOfWeek <= 6) {
+        if (state.account?.piperunUserId) {
+          try {
+            await updateGanhos();
+            console.log('Auto-atualização frequente executada às', now.toLocaleTimeString());
+          } catch (error) {
+            console.error('Erro na auto-atualização frequente:', error);
+          }
+        }
+      }
+    }, 15 * 60 * 1000); // A cada 15 minutos
+
+    // Limpar intervalos quando sair da aplicação
     window.addEventListener('beforeunload', () => {
       clearInterval(autoRefreshInterval);
+      clearInterval(frequentRefreshInterval);
     });
   }
 
@@ -1670,6 +2155,16 @@
 
   // Progress event listeners
   refreshProgressBtn.addEventListener('click', updateGanhos);
+  
+  if (toggleDailyDetailsBtn) {
+    toggleDailyDetailsBtn.addEventListener('click', () => {
+      const isVisible = dailyDetailsEl.style.display !== 'none';
+      dailyDetailsEl.style.display = isVisible ? 'none' : 'block';
+      toggleDailyDetailsBtn.innerHTML = isVisible 
+        ? '<i class="bi bi-eye"></i> Ver detalhes'
+        : '<i class="bi bi-eye-slash"></i> Ocultar detalhes';
+    });
+  }
 
   // Função de teste para validar celebração (apenas para desenvolvimento)
   if (window.location.search.includes('test=true')) {
@@ -2331,6 +2826,38 @@
   
   // Carregar dados de progresso
   await loadProgressData();
+  
+  // Configurar event listeners para progress
+  if (refreshProgressBtn) {
+    refreshProgressBtn.addEventListener('click', loadProgressData);
+  }
+  
+  // Configurar botão de recuperação de dados históricos
+  const backfillBtn = document.getElementById('backfill-btn');
+  if (backfillBtn) {
+    backfillBtn.addEventListener('click', async function() {
+      const btn = this;
+      const originalHtml = btn.innerHTML;
+      
+      try {
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i>';
+        btn.disabled = true;
+        
+        console.log('🔄 Iniciando recuperação manual de dados históricos...');
+        await backfillMissingDays();
+        
+        showToast('Dados históricos recuperados com sucesso!', 'success');
+        // Recarregar dados após recuperação
+        await loadProgressData();
+      } catch (error) {
+        console.error('❌ Erro ao recuperar dados históricos:', error);
+        showToast('Erro ao recuperar dados históricos', 'error');
+      } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+      }
+    });
+  }
   
   // Iniciar auto-atualização de ganhos
   startAutoRefresh();

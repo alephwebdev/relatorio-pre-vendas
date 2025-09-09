@@ -63,11 +63,49 @@ accounts/
 
 1. **Busca automática**: O sistema busca o `piperunUserId` da conta do usuário automaticamente
 2. **Requisição N8N**: Faz uma requisição POST para `https://n8n.unitycompany.com.br/webhook/user-ganhos` enviando o `account_id`
-3. **Filtragem**: Encontra os dados do usuário baseado no `user_id` retornado pelo N8N
-4. **Atualização**: Atualiza a barra de progresso com os ganhos da semana atual
-5. **Reset semanal**: Todo domingo à meia-noite, os dados são resetados para a nova semana
-6. **Histórico**: Os dados da semana anterior são salvos no histórico
-7. **Auto-atualização**: Durante horário comercial (8h-18h), o sistema atualiza automaticamente a cada hora
+3. **Dados do dia**: O N8N retorna os ganhos do dia atual para o usuário
+4. **Acumulação diária**: O sistema salva os ganhos de cada dia e acumula de segunda a sábado
+5. **Exemplo de acumulação**: 
+   - Segunda: 35 ganhos → Total: 35
+   - Terça: 4 ganhos → Total: 39 (35 + 4)
+   - Quarta: 12 ganhos → Total: 51 (35 + 4 + 12)
+   - E assim por diante...
+6. **Atualização**: Atualiza a barra de progresso com o total acumulado da semana
+7. **Reset semanal**: Todo domingo à meia-noite, os dados são resetados para a nova semana
+8. **Histórico**: Os dados da semana anterior são salvos no histórico
+9. **Auto-atualização**: Durante horário comercial (8h-18h), o sistema atualiza automaticamente a cada 15 minutos
+
+## Estrutura de dados no Firebase:
+
+### Coleção `daily-ganhos`:
+```
+daily-ganhos/
+├── {accountId}/
+│   └── days/
+│       ├── 2025-09-09/
+│       │   ├── date: "2025-09-09"
+│       │   ├── ganhos: 35
+│       │   ├── accountId: "PV001"
+│       │   └── updatedAt: timestamp
+│       ├── 2025-09-10/
+│       │   ├── date: "2025-09-10"
+│       │   ├── ganhos: 4
+│       │   └── updatedAt: timestamp
+│       └── ...
+```
+
+### Coleção `progress`:
+```
+progress/
+├── {accountId}/
+│   ├── currentWeekGanhos: 39
+│   ├── target: 150
+│   ├── weekStart: "2025-09-09"
+│   ├── weekEnd: "2025-09-15"
+│   ├── dailyGanhos: {"2025-09-09": 35, "2025-09-10": 4}
+│   ├── weekDates: ["2025-09-09", "2025-09-10", ...]
+│   └── lastUpdated: timestamp
+```
 
 ## Formato de resposta do N8N:
 
