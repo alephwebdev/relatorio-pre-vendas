@@ -113,6 +113,7 @@
   
   // Progress elements
   const refreshProgressBtn = qs('#refresh-progress-btn');
+  const weeklyHistoryBtn = qs('#weekly-history-btn');
   const currentGanhosEl = qs('#current-ganhos');
   const progressBar = qs('#progress-bar');
   const weeklyPeriodEl = qs('#weekly-period');
@@ -1266,6 +1267,9 @@
       // Atualizar UI
       updateProgressUI();
 
+      // Salvar semana atual no histórico
+      await saveCurrentWeekToHistory(ganhosAcumulados);
+
       showSuccess(`Total da semana: ${ganhosAcumulados} de ${state.progressData.target} ganhos`);
       console.log('🎉 Ganhos atualizados com sucesso!');
       
@@ -1602,6 +1606,381 @@
       
       dailyBreakdownEl.appendChild(dayEl);
     });
+  }
+
+  // ===========================
+  // FUNÇÕES DO HISTÓRICO SEMANAL
+  // ===========================
+
+  let allHistoryData = []; // Armazenar todos os dados históricos para filtros
+  
+  async function openWeeklyHistoryModal() {
+    console.log('📊 Abrindo modal de histórico semanal...');
+    const modal = new bootstrap.Modal(document.getElementById('weekly-history-modal'));
+    
+    // Mostrar loading
+    document.getElementById('weekly-history-loading').style.display = 'block';
+    document.getElementById('weekly-history-content').style.display = 'none';
+    
+    // Abrir modal
+    modal.show();
+    
+    // Carregar dados históricos
+    await loadWeeklyHistory();
+    
+    // Esconder loading e mostrar conteúdo
+    document.getElementById('weekly-history-loading').style.display = 'none';
+    document.getElementById('weekly-history-content').style.display = 'block';
+    
+    // Configurar filtros e listeners
+    setupHistoryFilters();
+    
+    // Adicionar event listener para refresh
+    const refreshHistoryBtn = document.getElementById('refresh-history-btn');
+    if (refreshHistoryBtn) {
+      refreshHistoryBtn.onclick = async () => {
+        refreshHistoryBtn.innerHTML = '<i class="bi bi-arrow-clockwise animate-spin me-1"></i>Atualizando...';
+        await loadWeeklyHistory();
+        refreshHistoryBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Atualizar';
+      };
+    }
+  }
+
+  async function loadWeeklyHistory() {
+    console.log('📚 Carregando histórico de metas semanais...');
+    
+    try {
+      // Buscar dados do histórico semanal (aumentar limite para mais dados)
+      const historyRef = db.collection('users').doc(state.currentUserId).collection('weekly-history');
+      const snapshot = await historyRef.orderBy('weekStart', 'desc').limit(100).get();
+      
+      const historyData = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        historyData.push({
+          id: doc.id,
+          ...data
+        });
+      });
+      
+      // Adicionar semana atual se não estiver no histórico
+      const currentWeek = getWeekDates();
+      const currentWeekKey = formatDateKey(currentWeek.start);
+      const hasCurrentWeek = historyData.some(week => week.id === currentWeekKey);
+      
+      if (!hasCurrentWeek) {
+        // Pegar dados atuais do DOM
+        const currentGanhosEl = document.getElementById('current-ganhos');
+        const currentGanhos = parseInt(currentGanhosEl?.textContent || '0');
+        
+        const currentWeekData = {
+          id: currentWeekKey,
+          weekStart: currentWeek.start,
+          weekEnd: currentWeek.end,
+          totalGanhos: currentGanhos,
+          target: 150,
+          isCurrentWeek: true,
+          status: getWeekStatus(currentGanhos, 150),
+          lastUpdated: new Date().toISOString()
+        };
+        historyData.unshift(currentWeekData);
+        
+        // Salvar semana atual no Firebase para futuras consultas
+        await saveWeekToHistory(currentWeekData);
+      }
+      
+      // Armazenar dados globalmente para filtros
+      allHistoryData = historyData;
+      
+      // Configurar anos disponíveis no filtro
+      setupYearFilter(historyData);
+      
+      // Renderizar todos os dados inicialmente
+      renderWeeklyHistory(historyData);
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar histórico semanal:', error);
+      showError('Erro ao carregar histórico de metas. Tente novamente.');
+      renderEmptyHistory();
+    }
+  }
+
+  function renderWeeklyHistory(historyData) {
+    const historyTbodyEl = document.getElementById('weekly-history-tbody');
+    const emptyStateEl = document.getElementById('weekly-history-empty');
+    
+    if (!historyData || historyData.length === 0) {
+      document.querySelector('.table-responsive').style.display = 'none';
+      emptyStateEl.style.display = 'block';
+      return;
+    }
+    
+    document.querySelector('.table-responsive').style.display = 'block';
+    emptyStateEl.style.display = 'none';
+    
+    historyTbodyEl.innerHTML = '';
+    
+    historyData.forEach((weekData, index) => {
+      const percentage = Math.round((weekData.totalGanhos / weekData.target) * 100);
+      const progressWidth = Math.min(percentage, 100);
+      const isCompleted = weekData.totalGanhos >= weekData.target;
+      
+      const row = document.createElement('tr');
+      row.className = `${weekData.isCurrentWeek ? 'current-week' : ''} ${isCompleted ? 'completed-week' : ''}`;
+      
+      // Determinar classe de performance
+      let performanceClass = 'miss';
+      if (weekData.totalGanhos >= weekData.target) {
+        performanceClass = 'success';
+      } else if (weekData.totalGanhos >= weekData.target * 0.7) {
+        performanceClass = 'partial';
+      }
+      
+      // Gerar nome da semana no formato [ano] - [mês] - [semana]
+      const weekName = generateWeekName(weekData.weekStart);
+      
+      row.innerHTML = `
+        <td class="period-cell">
+          <div class="d-flex align-items-center">
+            <div>
+              <div class="fw-bold">
+                ${weekName}
+                ${weekData.isCurrentWeek ? '<span class="current-week-badge">ATUAL</span>' : ''}
+              </div>
+              <div class="period-dates">
+                ${formatWeekPeriod(weekData.weekStart, weekData.weekEnd)}
+              </div>
+            </div>
+          </div>
+        </td>
+        
+        <td class="text-center meta-cell">
+          ${weekData.target}
+        </td>
+        
+        <td class="text-center result-cell ${performanceClass}">
+          ${isCompleted ? '<i class="bi bi-trophy-fill trophy-icon"></i>' : ''}
+          <strong>${weekData.totalGanhos}</strong>
+        </td>
+        
+        <td class="text-center performance-cell">
+          <div class="performance-progress">
+            <div class="performance-progress-bar ${performanceClass}" style="width: ${progressWidth}%"></div>
+          </div>
+          <div class="performance-percentage">${percentage}%</div>
+        </td>
+        
+        <td class="text-center">
+          <span class="status-badge ${getStatusClass(weekData.status)}">
+            ${getStatusText(weekData.status)}
+          </span>
+        </td>
+      `;
+      
+      historyTbodyEl.appendChild(row);
+    });
+  }
+
+  function renderEmptyHistory() {
+    const historyTbodyEl = document.getElementById('weekly-history-tbody');
+    const emptyStateEl = document.getElementById('weekly-history-empty');
+    
+    document.querySelector('.table-responsive').style.display = 'none';
+    emptyStateEl.style.display = 'block';
+  }
+
+  function formatDateKey(date) {
+    // Se já é uma string no formato YYYY-MM-DD, retorna como está
+    if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return date;
+    }
+    // Se é um objeto Date, converte para string
+    if (date instanceof Date) {
+      return date.toISOString().slice(0, 10);
+    }
+    // Tenta criar um Date se for string em outro formato
+    return new Date(date).toISOString().slice(0, 10);
+  }
+
+  function getWeekStatus(ganhos, target) {
+    const hoje = new Date();
+    const diaSemana = hoje.getDay(); // 0=dom, 1=seg, 2=ter...
+    
+    if (ganhos >= target) {
+      return 'completed';
+    } else if (diaSemana === 0) { // Domingo - semana encerrada
+      return 'not-achieved'; // Vermelho se não atingiu meta na semana encerrada
+    } else {
+      return 'in-progress'; // Amarelo se semana ainda em andamento
+    }
+  }
+
+  function getStatusText(status) {
+    switch(status) {
+      case 'completed': return 'Meta Atingida';
+      case 'in-progress': return 'Em Andamento';
+      case 'not-achieved': return 'Não Atingida';
+      default: return 'Desconhecido';
+    }
+  }
+
+  function getStatusClass(status) {
+    switch(status) {
+      case 'completed': return 'completed';
+      case 'in-progress': return 'in-progress';
+      case 'not-achieved': return 'not-achieved';
+      default: return 'in-progress';
+    }
+  }
+
+  function getResultClass(ganhos, target) {
+    if (ganhos >= target) return 'success';
+    if (ganhos >= target * 0.7) return 'partial';
+    return 'miss';
+  }
+
+  function formatWeekPeriod(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    const startFormatted = start.toLocaleDateString('pt-BR', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+    
+    const endFormatted = end.toLocaleDateString('pt-BR', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+    
+    return `${startFormatted} até ${endFormatted}`;
+  }
+
+  function generateWeekName(weekStartDate) {
+    const start = new Date(weekStartDate);
+    const year = start.getFullYear();
+    const month = start.toLocaleDateString('pt-BR', { month: 'short' });
+    
+    // Calcular qual semana do mês é
+    const firstDayOfMonth = new Date(year, start.getMonth(), 1);
+    const firstMonday = new Date(firstDayOfMonth);
+    
+    // Encontrar a primeira segunda-feira do mês
+    while (firstMonday.getDay() !== 1) {
+      firstMonday.setDate(firstMonday.getDate() + 1);
+    }
+    
+    // Calcular a diferença em semanas
+    const diffTime = start.getTime() - firstMonday.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const weekOfMonth = Math.floor(diffDays / 7) + 1;
+    
+    return `${year} - ${month} - S${weekOfMonth}`;
+  }
+
+  async function saveWeekToHistory(weekData) {
+    try {
+      console.log('💾 Salvando semana no histórico:', weekData.id);
+      const historyRef = db.collection('users').doc(state.currentUserId).collection('weekly-history');
+      await historyRef.doc(weekData.id).set({
+        weekStart: weekData.weekStart,
+        weekEnd: weekData.weekEnd,
+        totalGanhos: weekData.totalGanhos,
+        target: weekData.target,
+        status: weekData.status,
+        lastUpdated: weekData.lastUpdated,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      console.log('✅ Semana salva no histórico com sucesso');
+    } catch (error) {
+      console.error('❌ Erro ao salvar semana no histórico:', error);
+    }
+  }
+
+  async function saveCurrentWeekToHistory(ganhos) {
+    try {
+      const currentWeek = getWeekDates();
+      const currentWeekKey = formatDateKey(currentWeek.start);
+      
+      const weekData = {
+        id: currentWeekKey,
+        weekStart: currentWeek.start,
+        weekEnd: currentWeek.end,
+        totalGanhos: ganhos,
+        target: 150,
+        status: getWeekStatus(ganhos, 150),
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await saveWeekToHistory(weekData);
+    } catch (error) {
+      console.error('❌ Erro ao salvar semana atual no histórico:', error);
+    }
+  }
+
+  function setupYearFilter(historyData) {
+    const yearSelect = document.getElementById('filter-year');
+    const years = new Set();
+    
+    historyData.forEach(week => {
+      const year = new Date(week.weekStart).getFullYear();
+      years.add(year);
+    });
+    
+    // Limpar opções existentes (exceto "Todos os anos")
+    yearSelect.innerHTML = '<option value="">Todos os anos</option>';
+    
+    // Adicionar anos em ordem decrescente
+    Array.from(years).sort((a, b) => b - a).forEach(year => {
+      const option = document.createElement('option');
+      option.value = year;
+      option.textContent = year;
+      yearSelect.appendChild(option);
+    });
+  }
+
+  function setupHistoryFilters() {
+    const filterYear = document.getElementById('filter-year');
+    const filterMonth = document.getElementById('filter-month');
+    const clearFiltersBtn = document.getElementById('clear-filters-btn');
+    
+    // Event listeners para filtros
+    filterYear.addEventListener('change', applyFilters);
+    filterMonth.addEventListener('change', applyFilters);
+    clearFiltersBtn.addEventListener('click', clearFilters);
+  }
+
+  function applyFilters() {
+    const filterYear = document.getElementById('filter-year').value;
+    const filterMonth = document.getElementById('filter-month').value;
+    
+    let filteredData = [...allHistoryData];
+    
+    // Filtrar por ano
+    if (filterYear) {
+      filteredData = filteredData.filter(week => {
+        const year = new Date(week.weekStart).getFullYear();
+        return year.toString() === filterYear;
+      });
+    }
+    
+    // Filtrar por mês
+    if (filterMonth !== '') {
+      filteredData = filteredData.filter(week => {
+        const month = new Date(week.weekStart).getMonth();
+        return month.toString() === filterMonth;
+      });
+    }
+    
+    renderWeeklyHistory(filteredData);
+  }
+
+  function clearFilters() {
+    document.getElementById('filter-year').value = '';
+    document.getElementById('filter-month').value = '';
+    renderWeeklyHistory(allHistoryData);
   }
 
   function triggerCompletionCelebration() {
@@ -2155,6 +2534,10 @@
 
   // Progress event listeners
   refreshProgressBtn.addEventListener('click', updateGanhos);
+  
+  if (weeklyHistoryBtn) {
+    weeklyHistoryBtn.addEventListener('click', openWeeklyHistoryModal);
+  }
   
   if (toggleDailyDetailsBtn) {
     toggleDailyDetailsBtn.addEventListener('click', () => {

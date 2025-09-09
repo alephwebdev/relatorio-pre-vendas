@@ -1817,3 +1817,228 @@ body {
   flex-direction: column;
   gap: 0.5rem;
 }
+
+/* Estilos para o Modal de Histórico Semanal */
+.weekly-history-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Tabela do histórico semanal */
+#weekly-history-table {
+  margin-bottom: 0;
+}
+
+#weekly-history-table thead th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #495057;
+  padding: 1rem 0.75rem;
+  border-bottom: 2px solid #dee2e6;
+  border-top: 1px solid #dee2e6;
+}
+
+#weekly-history-table tbody tr {
+  transition: all 0.2s ease;
+  border-bottom: 1px solid #dee2e6;
+}
+
+#weekly-history-table tbody tr:hover {
+  background-color: #f8f9fa;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+#weekly-history-table tbody tr.current-week {
+  background: linear-gradient(135deg, rgba(169, 25, 24, 0.08), rgba(169, 25, 24, 0.03));
+  border-left: 4px solid var(--accent-color);
+}
+
+#weekly-history-table tbody tr.current-week:hover {
+  background: linear-gradient(135deg, rgba(169, 25, 24, 0.12), rgba(169, 25, 24, 0.05));
+}
+
+#weekly-history-table tbody tr.completed-week {
+  background: linear-gradient(135deg, rgba(40, 167, 69, 0.08), rgba(40, 167, 69, 0.03));
+  border-left: 4px solid #28a745;
+}
+
+#weekly-history-table tbody tr.completed-week:hover {
+  background: linear-gradient(135deg, rgba(40, 167, 69, 0.12), rgba(40, 167, 69, 0.05));
+}
+
+#weekly-history-table tbody td {
+  padding: 1rem 0.75rem;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+/* Período */
+.period-cell {
+  font-weight: 500;
+  color: #495057;
+}
+
+.period-dates {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
+.current-week-badge {
+  background: linear-gradient(135deg, var(--accent-color), #cf3a3b);
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 1rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+/* Meta */
+.meta-cell {
+  font-weight: 600;
+  color: #6c757d;
+  font-size: 1rem;
+}
+
+/* Resultado */
+.result-cell {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.result-cell.success {
+  color: #28a745;
+}
+
+.result-cell.partial {
+  color: #ffc107;
+}
+
+.result-cell.miss {
+  color: #dc3545;
+}
+
+/* Performance (Progress Bar) */
+.performance-cell {
+  width: 150px;
+}
+
+.performance-progress {
+  height: 8px;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.performance-progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.performance-progress-bar.success {
+  background: linear-gradient(135deg, #28a745, #20c997);
+}
+
+.performance-progress-bar.partial {
+  background: linear-gradient(135deg, #ffc107, #fd7e14);
+}
+
+.performance-progress-bar.miss {
+  background: linear-gradient(135deg, #dc3545, #e74c3c);
+}
+
+.performance-percentage {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #495057;
+  text-align: center;
+}
+
+/* Status Badge */
+.status-badge {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 1.5rem;
+  font-weight: 600;
+  border: 1px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.completed {
+  background: linear-gradient(135deg, #d4edda, #c3e6cb);
+  color: #155724;
+  border-color: #c3e6cb;
+  box-shadow: 0 2px 4px rgba(21, 87, 36, 0.1);
+}
+
+.status-badge.in-progress {
+  background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+  color: #856404;
+  border-color: #ffeaa7;
+  box-shadow: 0 2px 4px rgba(133, 100, 4, 0.1);
+}
+
+.status-badge.not-achieved {
+  background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+  color: #721c24;
+  border-color: #f5c6cb;
+  box-shadow: 0 2px 4px rgba(114, 28, 36, 0.1);
+}
+
+/* Trophy icon for completed weeks */
+.trophy-icon {
+  color: #ffd700;
+  margin-right: 0.25rem;
+  font-size: 1rem;
+}
+
+/* Empty state */
+.weekly-history-empty {
+  padding: 3rem 1rem;
+}
+
+.weekly-history-empty i {
+  font-size: 4rem;
+  color: #dee2e6;
+  margin-bottom: 1.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  #weekly-history-table {
+    font-size: 0.85rem;
+  }
+  
+  #weekly-history-table tbody td {
+    padding: 0.75rem 0.5rem;
+  }
+  
+  .performance-cell {
+    width: 120px;
+  }
+  
+  .current-week-badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.4rem;
+  }
+}
+
+/* Animação de spin para ícones */
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
