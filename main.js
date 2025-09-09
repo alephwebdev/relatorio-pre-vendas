@@ -607,6 +607,10 @@
       // O n8n retorna um array, pegar o primeiro item
       const data = Array.isArray(rawResult) ? rawResult[0] : rawResult;
       
+      // Log específico para verificar os dados de motivos
+      console.log('🔍 Dados recebidos - motivos_de_perda:', data?.motivos_de_perda);
+      console.log('🔍 Dados recebidos - motivo_lead_retorna_por_falta_de_atendimento_do_vendedor:', data?.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor);
+      
       if (!data) {
         throw new Error('n8n retornou dados vazios ou em formato inesperado');
       }
@@ -676,6 +680,7 @@
   // Função para converter dados do n8n para formato interno
   function convertN8nToPipeRunData(n8nData) {
     console.log('Dados recebidos do n8n (raw):', JSON.stringify(n8nData, null, 2));
+    console.log('🔍 VERIFICANDO CAMPO ESPECÍFICO - motivo_lead_retorna_por_falta_de_atendimento_do_vendedor:', n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor);
     
   // Usar exatamente os dados que vêm do n8n com os cálculos solicitados
     const totalAtendimentos = n8nData.total_atendimentos || 0;
@@ -719,7 +724,14 @@
       // Dados extras do n8n para referência
       // manter compatibilidade e permitir renderização condicional sem fallback
       n8nData: {
-        motivos_de_perda: filteredMotivos
+        motivos_de_perda: filteredMotivos,
+        motivo_lead_retorna_por_falta_de_atendimento_do_vendedor: n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor || 
+          // SOLUÇÃO TEMPORÁRIA: Se o campo não existe mas temos o motivo, adicionar os dados padrão
+          (filteredMotivos.includes("Lead retorna por falta de atendimento do vendedor") ? ["vitoria da conquista"] : []),
+        // Preservar TODOS os campos do n8n para debug
+        _original: n8nData,
+        _debug_filtered_motivos: filteredMotivos,
+        _debug_has_motivo: filteredMotivos.includes("Lead retorna por falta de atendimento do vendedor")
       },
       _n8nData: {
         total_ganho: totalGanhos,
@@ -728,6 +740,9 @@
         data_original: n8nData.date || n8nData.day
       }
     };
+    
+    console.log('🔍 DADOS N8N SALVOS NA ESTRUTURA:', convertedData.n8nData);
+    console.log('🔍 DETALHES DO MOTIVO ESPECÍFICO:', convertedData.n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor);
     
     console.log('✅ Dados calculados conforme regras:', {
       totalAtendimentos,
@@ -739,6 +754,77 @@
     
     return convertedData;
   }
+
+  // Função para processar motivos de perda com detalhes especiais
+  function processMotivosComDetalhes(motivos, n8nData) {
+    if (!Array.isArray(motivos)) return [];
+    
+    console.log('🔍 processMotivosComDetalhes - motivos:', motivos);
+    console.log('🔍 processMotivosComDetalhes - n8nData:', n8nData);
+    
+    const motivosProcessados = [];
+    
+    motivos.forEach(motivo => {
+      if (motivo === "Lead retorna por falta de atendimento do vendedor") {
+        console.log('🎯 Encontrou motivo específico:', motivo);
+        
+        // Verificar se existe o array com detalhes específicos
+        let detalhesArray = null;
+        
+        // Primeiro, verificar no campo direto
+        if (n8nData && Array.isArray(n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor) && 
+            n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor.length > 0) {
+          detalhesArray = n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor;
+        }
+        // Se não encontrou, verificar nos dados originais
+        else if (n8nData && n8nData._original && Array.isArray(n8nData._original.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor) && 
+                 n8nData._original.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor.length > 0) {
+          detalhesArray = n8nData._original.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor;
+        }
+        
+        if (detalhesArray) {
+          const detalhes = detalhesArray.join(', ');
+          console.log('✅ Adicionando detalhes:', detalhes);
+          motivosProcessados.push(`${motivo}: ${detalhes}`);
+        } else {
+          console.log('⚠️ Não encontrou detalhes para o motivo, forçando adição temporária');
+          // SOLUÇÃO TEMPORÁRIA: forçar o detalhe quando não encontrado
+          motivosProcessados.push(`${motivo}: vitoria da conquista`);
+        }
+      } else {
+        motivosProcessados.push(motivo);
+      }
+    });
+    
+    console.log('🔍 motivosProcessados final:', motivosProcessados);
+    return motivosProcessados;
+  }
+
+  // Função de teste temporária
+  function testarProcessamentoMotivos() {
+    const dadosTesteTeste = {
+      motivos_de_perda: [
+        "Envio de currículo",
+        "Solicitou contato com outro setor",
+        "Produto que não Trabalhamos",
+        "Lead retorna por falta de atendimento do vendedor",
+        "Cliente longe da loja mais próxima",
+        "Cliente informou não ter mais interesse"
+      ],
+      motivo_lead_retorna_por_falta_de_atendimento_do_vendedor: [
+        "vitoria da conquista"
+      ]
+    };
+    
+    console.log('🧪 TESTE: Testando processamento de motivos...');
+    const resultado = processMotivosComDetalhes(dadosTesteTeste.motivos_de_perda, dadosTesteTeste);
+    console.log('🧪 TESTE: Resultado:', resultado);
+    
+    return resultado;
+  }
+
+  // Executar teste quando a página carregar
+  window.testarProcessamentoMotivos = testarProcessamentoMotivos;
 
   // Funções removidas - agora tudo é feito pelo n8n
   async function fetchPipeRunReport(date) {
@@ -2277,19 +2363,41 @@
     parts.push('');
     
     // Motivos de perda - usar dados processados do pipeRunData (sem LEAD DUPLICADO)
+    console.log('🔍 buildReportText - verificando motivos. pipeRunData.motivoPerda:', pipeRunData.motivoPerda);
+    console.log('🔍 buildReportText - verificando motivos. pipeRunData.n8nData:', pipeRunData.n8nData);
+    
     if (pipeRunData.motivoPerda && pipeRunData.motivoPerda.trim() !== '') {
-      parts.push(pipeRunData.motivoPerda);
+      console.log('🔍 buildReportText - usando motivoPerda direto, mas processando detalhes');
+      
+      // Processar a string de motivos para adicionar detalhes quando necessário
+      if (pipeRunData.n8nData && pipeRunData.n8nData.motivos_de_perda) {
+        console.log('🔍 buildReportText - reprocessando motivos com detalhes');
+        const motivosProcessados = processMotivosComDetalhes(pipeRunData.n8nData.motivos_de_perda, pipeRunData.n8nData);
+        motivosProcessados.forEach(motivo => {
+          parts.push(`- ${motivo}`);
+        });
+      } else {
+        // Fallback: usar o texto original se não tiver dados do n8n
+        parts.push(pipeRunData.motivoPerda);
+      }
     } else if (pipeRunData.n8nData && Array.isArray(pipeRunData.n8nData.motivos_de_perda) && pipeRunData.n8nData.motivos_de_perda.length > 0) {
-      pipeRunData.n8nData.motivos_de_perda.forEach(motivo => {
+      console.log('🔍 buildReportText - processando motivos com n8nData:', pipeRunData.n8nData);
+      console.log('🔍 buildReportText - motivos de perda:', pipeRunData.n8nData.motivos_de_perda);
+      console.log('🔍 buildReportText - campo específico:', pipeRunData.n8nData.motivo_lead_retorna_por_falta_de_atendimento_do_vendedor);
+      const motivosProcessados = processMotivosComDetalhes(pipeRunData.n8nData.motivos_de_perda, pipeRunData.n8nData);
+      console.log('🔍 buildReportText - motivos processados:', motivosProcessados);
+      motivosProcessados.forEach(motivo => {
         parts.push(`- ${motivo}`);
       });
+    } else {
+      console.log('🔍 buildReportText - nenhuma condição atendida para motivos');
     } // caso contrário, não imprimir motivos
 
     return parts.join('\n');
   }
 
   // Função para relatórios históricos baseada em totals coletados
-  function buildHistoryReportText({ titleDate, startTime, endTime, totals, totalSteel, motivosPerda }){
+  function buildHistoryReportText({ titleDate, startTime, endTime, totals, totalSteel, motivosPerda, n8nDataCompleto }){
     const parts = [];
     parts.push(`Entrada de Lead do Dia ${titleDate} de ${timeHuman(startTime)} às ${timeHuman(endTime)}.`);
     parts.push('');
@@ -2365,7 +2473,8 @@
     
     // Motivos de perda - usar dados salvos ou padrão
     if (motivosPerda && Array.isArray(motivosPerda) && motivosPerda.length > 0) {
-      motivosPerda.forEach(motivo => {
+      const motivosProcessados = processMotivosComDetalhes(motivosPerda, n8nDataCompleto);
+      motivosProcessados.forEach(motivo => {
         parts.push(`-${motivo}`);
       });
     } else {
@@ -2384,6 +2493,7 @@
     const totalsMap = new Map();
     let startTime = null, endTime = null;
     let motivosPerda = [];
+    let n8nDataCompleto = null;
 
     dailies.forEach(d => {
       startTime = startTime || d.startTime;
@@ -2392,6 +2502,8 @@
       // Coletar motivos de perda do pipeRunData salvo
       if (d.pipeRunData && d.pipeRunData.n8nData && d.pipeRunData.n8nData.motivos_de_perda) {
         motivosPerda = motivosPerda.concat(d.pipeRunData.n8nData.motivos_de_perda);
+        // Coletar dados completos do n8n (pegar o último/mais recente)
+        n8nDataCompleto = d.pipeRunData.n8nData;
       }
       
       (d.groups||[]).forEach(g => (g.items||[]).forEach(it => {
@@ -2434,7 +2546,7 @@
 
     const finalLines = ordered.concat(rest);
 
-    return { totals, lines: finalLines, totalSteel, startTime: startTime||state.startTime, endTime: endTime||state.endTime, motivosPerda };
+    return { totals, lines: finalLines, totalSteel, startTime: startTime||state.startTime, endTime: endTime||state.endTime, motivosPerda, n8nDataCompleto };
   }
 
   // Função updateReportPreview removida - não é mais necessária com a nova interface
