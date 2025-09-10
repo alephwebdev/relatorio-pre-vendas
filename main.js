@@ -47,6 +47,11 @@
     target: 150,
     dailyGanhos: {}, // { "2025-09-09": 35, "2025-09-10": 4, ... }
     weekDates: [] // ["2025-09-09", "2025-09-10", "2025-09-11", ...]
+  },
+  qualificationsAnalysis: {
+    selectedUsers: [], // Array de IDs de usuários selecionados
+    availableUsers: [], // Lista de todos os usuários disponíveis
+    qualificationsData: {} // Dados de qualificações por usuário e data
   }
   };
 
@@ -88,6 +93,8 @@
   const weeklyGanhosDoc = (accountId, weekStart) => db.collection('weekly-ganhos').doc(accountId).collection('weeks').doc(weekStart);
   // daily ganhos: /daily-ganhos/{accountId}/days/{date}
   const dailyGanhosDoc = (accountId, date) => db.collection('daily-ganhos').doc(accountId).collection('days').doc(date);
+  // qualifications analysis: /qualifications/{accountId}/days/{date}
+  const qualificationsDoc = (accountId, date) => db.collection('qualifications').doc(accountId).collection('days').doc(date);
 
   // ---- DOM refs ----
   const loginView = qs('#login-view');
@@ -152,6 +159,21 @@
   const finalReportText = qs('#final-report-text');
   const copyFinalReportBtn = qs('#copy-final-report-btn');
   const whatsappFinalLink = qs('#whatsapp-final-link');
+
+  // Modal de análise de qualificações
+  const qualificationsAnalysisModal = new bootstrap.Modal(qs('#qualifications-analysis-modal'));
+  const qualAnalysisBtn = qs('#qualifications-analysis-btn');
+  const loadQualificationsBtn = qs('#load-qualifications-btn');
+  const availableUsersList = qs('#available-users-list');
+  const selectedUsersList = qs('#selected-users-list');
+  const selectAllUsersBtn = qs('#select-all-users-btn');
+  const qualificationsResults = qs('#qualifications-results');
+  const qualificationsLoading = qs('#qualifications-loading');
+  const qualificationsEmpty = qs('#qualifications-empty');
+  const weeklyMetrics = qs('#weekly-metrics');
+  const qualificationsTable = qs('#qualifications-table');
+  const qualificationsTbody = qs('#qualifications-tbody');
+  const exportQualificationsBtn = qs('#export-qualifications-btn');
 
   // ---- Helpers ----
   function qs(sel, root=document){ return root.querySelector(sel); }
@@ -874,11 +896,34 @@
       updatedAt: Date.now()
     };
     await dailyDoc(state.date, state.account.id).set(payload, { merge: true });
+    
+    // Salvar também os dados de qualificações se existirem
+    if (state.pipeRunData && state.pipeRunData.qualificados > 0) {
+      await saveQualificationsData(state.date, state.account.id, state.pipeRunData.qualificados);
+    }
+    
     setSaving(false);
     showSuccess('Dados salvos automaticamente', 2000);
   }
 
   const saveDailyDebounced = debounce(saveDaily, 500);
+
+  // Função para salvar dados de qualificações diárias
+  async function saveQualificationsData(date, accountId, qualificados) {
+    try {
+      const qualData = {
+        accountId: accountId,
+        date: date,
+        qualificados: qualificados,
+        dayOfWeek: new Date(date + 'T00:00:00').getDay(), // 0=domingo, 1=segunda, etc.
+        updatedAt: Date.now()
+      };
+      await qualificationsDoc(accountId, date).set(qualData, { merge: true });
+      console.log(`💾 Dados de qualificação salvos: ${accountId} - ${date} - ${qualificados} qualificados`);
+    } catch (error) {
+      console.error('❌ Erro ao salvar dados de qualificações:', error);
+    }
+  }
 
   async function listAccounts(){
     const snap = await colAccounts().get();
@@ -2280,6 +2325,305 @@
     });
   }
 
+  // ===========================
+  // FUNÇÕES DO MODAL DE ANÁLISE DE QUALIFICAÇÕES
+  // ===========================
+  // Análise de Qualificações por Dia da Semana
+  // ===========================
+
+  async function openQualificationsAnalysisModal() {
+    console.log('📊 Abrindo modal de análise de qualificações...');
+    
+    // Carregar lista de usuários disponíveis
+    await loadAvailableUsers();
+    
+    // Resetar estado
+    state.qualificationsAnalysis.selectedUsers = [];
+    
+    // Esconder resultados
+    qualificationsResults.classList.add('d-none');
+    qualificationsLoading.style.display = 'none';
+    qualificationsEmpty.style.display = 'none';
+    exportQualificationsBtn.classList.add('d-none');
+    
+    qualificationsAnalysisModal.show();
+  }
+
+  async function loadAvailableUsers() {
+    try {
+      const accounts = await colAccounts().get();
+      state.qualificationsAnalysis.availableUsers = accounts.docs.map(doc => doc.data());
+      renderAvailableUsers();
+      renderSelectedUsers();
+    } catch (error) {
+      console.error('❌ Erro ao carregar usuários:', error);
+      showError('Erro ao carregar lista de usuários');
+    }
+  }
+
+  function renderAvailableUsers() {
+    availableUsersList.innerHTML = '';
+    
+    state.qualificationsAnalysis.availableUsers.forEach(user => {
+      if (!state.qualificationsAnalysis.selectedUsers.includes(user.id)) {
+        const userItem = document.createElement('div');
+        userItem.className = 'user-item';
+        userItem.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center w-100">
+            <span><strong>${user.name}</strong> (${user.id})</span>
+            <button class="btn btn-sm btn-outline-primary" onclick="selectUser('${user.id}')">
+              <i class="bi bi-plus"></i> Selecionar
+            </button>
+          </div>
+        `;
+        availableUsersList.appendChild(userItem);
+      }
+    });
+  }
+
+  function renderSelectedUsers() {
+    selectedUsersList.innerHTML = '';
+    
+    if (state.qualificationsAnalysis.selectedUsers.length === 0) {
+      selectedUsersList.innerHTML = '<p class="text-muted text-center">Nenhum usuário selecionado</p>';
+      return;
+    }
+    
+    state.qualificationsAnalysis.selectedUsers.forEach(userId => {
+      const user = state.qualificationsAnalysis.availableUsers.find(u => u.id === userId);
+      if (user) {
+        const userItem = document.createElement('div');
+        userItem.className = 'user-item selected';
+        userItem.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center w-100">
+            <span><strong>${user.name}</strong> (${user.id})</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="deselectUser('${user.id}')">
+              <i class="bi bi-x"></i> Remover
+            </button>
+          </div>
+        `;
+        selectedUsersList.appendChild(userItem);
+      }
+    });
+  }
+
+  window.selectUser = function(userId) {
+    if (!state.qualificationsAnalysis.selectedUsers.includes(userId)) {
+      state.qualificationsAnalysis.selectedUsers.push(userId);
+      renderAvailableUsers();
+      renderSelectedUsers();
+    }
+  };
+
+  window.deselectUser = function(userId) {
+    state.qualificationsAnalysis.selectedUsers = state.qualificationsAnalysis.selectedUsers.filter(id => id !== userId);
+    renderAvailableUsers();
+    renderSelectedUsers();
+  };
+
+  function selectAllUsers() {
+    state.qualificationsAnalysis.selectedUsers = [...state.qualificationsAnalysis.availableUsers.map(u => u.id)];
+    renderAvailableUsers();
+    renderSelectedUsers();
+  }
+
+  async function loadQualificationsData() {
+    if (state.qualificationsAnalysis.selectedUsers.length === 0) {
+      showWarning('Selecione pelo menos um usuário para análise');
+      return;
+    }
+
+    qualificationsLoading.style.display = 'block';
+    qualificationsResults.classList.add('d-none');
+    qualificationsEmpty.style.display = 'none';
+
+    try {
+      // Carregar todos os dados de qualificações para os usuários selecionados
+      const qualificationsData = {};
+      
+      for (const userId of state.qualificationsAnalysis.selectedUsers) {
+        qualificationsData[userId] = await loadUserQualifications(userId);
+      }
+
+      state.qualificationsAnalysis.qualificationsData = qualificationsData;
+
+      // Verificar se há dados
+      const hasData = Object.values(qualificationsData).some(userData => 
+        Object.keys(userData).length > 0
+      );
+
+      if (hasData) {
+        renderQualificationsAnalysis();
+        qualificationsResults.classList.remove('d-none');
+        exportQualificationsBtn.classList.remove('d-none');
+      } else {
+        qualificationsEmpty.style.display = 'block';
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados de qualificações:', error);
+      showError('Erro ao carregar dados de qualificações');
+    } finally {
+      qualificationsLoading.style.display = 'none';
+    }
+  }
+
+  async function loadUserQualifications(userId) {
+    const qualificationsData = {};
+    
+    try {
+      // Buscar dados de qualificações na coleção /qualifications/{accountId}/days/
+      const qualificationsRef = db.collection('qualifications').doc(userId).collection('days');
+      const snapshot = await qualificationsRef.get();
+
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.date && data.qualificados >= 0) {
+          qualificationsData[data.date] = data.qualificados;
+        }
+      });
+
+    } catch (error) {
+      console.error(`❌ Erro ao carregar qualificações para usuário ${userId}:`, error);
+    }
+
+    return qualificationsData;
+  }
+
+  function renderQualificationsAnalysis() {
+    renderWeeklyMetrics();
+    renderQualificationsTable();
+  }
+
+  function renderWeeklyMetrics() {
+    const weeklyData = calculateWeeklyMetrics();
+    const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    const dayClasses = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+    weeklyMetrics.innerHTML = '';
+
+    for (let i = 0; i < 7; i++) {
+      const total = weeklyData[i] || 0;
+      
+      const col = document.createElement('div');
+      col.className = 'col-md-4 col-lg-3 mb-3';
+      col.innerHTML = `
+        <div class="weekly-metric-card ${dayClasses[i]}">
+          <div class="weekly-metric-number">${total}</div>
+          <div class="weekly-metric-label">${dayLabels[i]}</div>
+        </div>
+      `;
+      weeklyMetrics.appendChild(col);
+    }
+  }
+
+  function calculateWeeklyMetrics() {
+    const weeklyData = [0, 0, 0, 0, 0, 0, 0]; // [domingo, segunda, terça, quarta, quinta, sexta, sábado]
+
+    // Somar qualificações de todos os usuários selecionados por dia da semana
+    Object.values(state.qualificationsAnalysis.qualificationsData).forEach(userData => {
+      Object.entries(userData).forEach(([date, qualificados]) => {
+        const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+        weeklyData[dayOfWeek] += qualificados;
+      });
+    });
+
+    return weeklyData;
+  }
+
+  function renderQualificationsTable() {
+    qualificationsTbody.innerHTML = '';
+
+    // Obter todas as datas únicas dos dados
+    const allDates = new Set();
+    Object.values(state.qualificationsAnalysis.qualificationsData).forEach(userData => {
+      Object.keys(userData).forEach(date => allDates.add(date));
+    });
+
+    // Converter para array e ordenar (mais recentes primeiro)
+    const dates = Array.from(allDates).sort().reverse();
+
+    dates.forEach(date => {
+      const row = document.createElement('tr');
+      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+      const dayNames = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+      const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+      // Calcular total para o dia (soma de todos os usuários selecionados)
+      let total = 0;
+      state.qualificationsAnalysis.selectedUsers.forEach(userId => {
+        const userData = state.qualificationsAnalysis.qualificationsData[userId];
+        total += userData[date] || 0;
+      });
+
+      row.innerHTML = `
+        <td>${new Date(date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+        <td><span class="day-badge-qual ${dayNames[dayOfWeek]}">${dayLabels[dayOfWeek]}</span></td>
+        <td class="text-center fw-bold">${total}</td>
+      `;
+
+      // Destacar finais de semana
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        row.classList.add('qualifications-row-highlight');
+      }
+
+      qualificationsTbody.appendChild(row);
+    });
+  }
+
+  function exportQualificationsCSV() {
+    const csvData = [];
+    const headers = ['Data', 'Dia da Semana', 'Qualificações Total'];
+    
+    csvData.push(headers.join(','));
+
+    // Obter todas as datas únicas
+    const allDates = new Set();
+    Object.values(state.qualificationsAnalysis.qualificationsData).forEach(userData => {
+      Object.keys(userData).forEach(date => allDates.add(date));
+    });
+
+    const dates = Array.from(allDates).sort();
+    const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+    dates.forEach(date => {
+      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+      let total = 0;
+      
+      state.qualificationsAnalysis.selectedUsers.forEach(userId => {
+        const userData = state.qualificationsAnalysis.qualificationsData[userId];
+        total += userData[date] || 0;
+      });
+
+      const row = [
+        new Date(date + 'T00:00:00').toLocaleDateString('pt-BR'),
+        dayLabels[dayOfWeek],
+        total
+      ];
+      
+      csvData.push(row.join(','));
+    });
+
+    // Criar e fazer download do arquivo CSV
+    const csvContent = csvData.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `qualificacoes_analise_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showSuccess('Relatório de qualificações exportado com sucesso!');
+    } else {
+      showError('Seu navegador não suporta download de arquivos');
+    }
+  }
+
   // ---- Report Generation ----
   function buildReportText({ titleDate, startTime, endTime, products, pipeRunData }){
     const parts = [];
@@ -2649,6 +2993,23 @@
   
   if (weeklyHistoryBtn) {
     weeklyHistoryBtn.addEventListener('click', openWeeklyHistoryModal);
+  }
+
+  // Qualifications analysis modal listeners
+  if (qualAnalysisBtn) {
+    qualAnalysisBtn.addEventListener('click', openQualificationsAnalysisModal);
+  }
+
+  if (loadQualificationsBtn) {
+    loadQualificationsBtn.addEventListener('click', loadQualificationsData);
+  }
+
+  if (selectAllUsersBtn) {
+    selectAllUsersBtn.addEventListener('click', selectAllUsers);
+  }
+
+  if (exportQualificationsBtn) {
+    exportQualificationsBtn.addEventListener('click', exportQualificationsCSV);
   }
   
   if (toggleDailyDetailsBtn) {
