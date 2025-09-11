@@ -139,6 +139,15 @@ body {
   overflow: hidden;
 }
 
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border-color);
+  background: #fff;
+}
+
 .user-name { font-size: 1rem; color: var(--on-surface-color) !important; font-weight: 600; }
 
 .user-id-badge {

@@ -101,6 +101,8 @@
 
   const accountNameEl = qs('#account-name');
   const accountIdEl = qs('#account-id');
+  const accountAvatarEl = qs('#account-avatar');
+  const accountAvatarFallbackEl = qs('#account-avatar-fallback');
   const currentDayEl = qs('#current-day');
   const dateInput = qs('#date');
   const startTimeInput = qs('#start-time');
@@ -385,8 +387,8 @@
     root.style.setProperty('--accent-lighter', hexToRgba(color, 0.06));
 
     // Pastel background and surfaces derived from the accent (towards white)
-    const bg = shade(color, 96);       // very light tint
-    const surface = shade(color, 94);  // slightly stronger than bg
+  const bg = shade(color, 96);       // very light tint on page background only
+  const surface = '#ffffff';         // keep surfaces white for maximum readability
     const border = hexToRgba(shade(color, 75), 0.6); // subtle border from accent
 
     root.style.setProperty('--bg-color', bg);
@@ -439,9 +441,15 @@
     if (!state.account) return;
     try {
       const snap = await colAccounts().doc(state.account.id).get();
-      const color = snap.exists ? snap.data().themeColor : null;
+      const data = snap.exists ? snap.data() : null;
+      const color = data?.themeColor || null;
       if (color) { applyTheme(color); }
+      // Update photoUrl if present and re-render header
+      if (data && data.photoUrl) {
+        state.account.photoUrl = data.photoUrl;
+      }
       renderThemePalette(color);
+      render();
     } catch (e) { console.warn('Falha ao carregar tema:', e); renderThemePalette(null); }
   }
 
@@ -461,6 +469,25 @@
     // Atualizar informações do usuário
     accountNameEl.textContent = state.account?.name || '';
     accountIdEl.textContent = state.account ? `ID: ${state.account.id}` : '';
+    // Avatar do usuário via URL salva no Firebase
+    try {
+      if (accountAvatarEl && accountAvatarFallbackEl) {
+        const url = (state.account && state.account.photoUrl) ? String(state.account.photoUrl).trim() : '';
+        if (url) {
+          accountAvatarEl.src = url;
+          accountAvatarEl.classList.remove('d-none');
+          accountAvatarFallbackEl.classList.add('d-none');
+          // fallback se a URL estiver quebrada
+          accountAvatarEl.onerror = () => {
+            accountAvatarEl.classList.add('d-none');
+            accountAvatarFallbackEl.classList.remove('d-none');
+          };
+        } else {
+          accountAvatarEl.classList.add('d-none');
+          accountAvatarFallbackEl.classList.remove('d-none');
+        }
+      }
+    } catch (e) { /* noop */ }
     
     // Adicionar o dia da semana atual
     if (currentDayEl) {
