@@ -47,11 +47,6 @@
     target: 150,
     dailyGanhos: {}, // { "2025-09-09": 35, "2025-09-10": 4, ... }
     weekDates: [] // ["2025-09-09", "2025-09-10", "2025-09-11", ...]
-  },
-  qualificationsAnalysis: {
-    selectedUsers: [], // Array de IDs de usuários selecionados
-    availableUsers: [], // Lista de todos os usuários disponíveis
-    qualificationsData: {} // Dados de qualificações por usuário e data
   }
   };
 
@@ -93,8 +88,6 @@
   const weeklyGanhosDoc = (accountId, weekStart) => db.collection('weekly-ganhos').doc(accountId).collection('weeks').doc(weekStart);
   // daily ganhos: /daily-ganhos/{accountId}/days/{date}
   const dailyGanhosDoc = (accountId, date) => db.collection('daily-ganhos').doc(accountId).collection('days').doc(date);
-  // qualifications analysis: /qualifications/{accountId}/days/{date}
-  const qualificationsDoc = (accountId, date) => db.collection('qualifications').doc(accountId).collection('days').doc(date);
 
   // ---- DOM refs ----
   const loginView = qs('#login-view');
@@ -134,6 +127,8 @@
   const copyReportBtn = null; // Removido da interface  
   const whatsappLink = null; // Removido da interface
   const logoutBtn = qs('#logout-btn');
+  const themeBtn = qs('#theme-btn');
+  const themePalette = qs('#theme-palette');
 
   const reportModal = new bootstrap.Modal(qs('#report-modal'));
   const reportDate = qs('#report-date');
@@ -159,21 +154,6 @@
   const finalReportText = qs('#final-report-text');
   const copyFinalReportBtn = qs('#copy-final-report-btn');
   const whatsappFinalLink = qs('#whatsapp-final-link');
-
-  // Modal de análise de qualificações
-  const qualificationsAnalysisModal = new bootstrap.Modal(qs('#qualifications-analysis-modal'));
-  const qualAnalysisBtn = qs('#qualifications-analysis-btn');
-  const loadQualificationsBtn = qs('#load-qualifications-btn');
-  const availableUsersList = qs('#available-users-list');
-  const selectedUsersList = qs('#selected-users-list');
-  const selectAllUsersBtn = qs('#select-all-users-btn');
-  const qualificationsResults = qs('#qualifications-results');
-  const qualificationsLoading = qs('#qualifications-loading');
-  const qualificationsEmpty = qs('#qualifications-empty');
-  const weeklyMetrics = qs('#weekly-metrics');
-  const qualificationsTable = qs('#qualifications-table');
-  const qualificationsTbody = qs('#qualifications-tbody');
-  const exportQualificationsBtn = qs('#export-qualifications-btn');
 
   // ---- Helpers ----
   function qs(sel, root=document){ return root.querySelector(sel); }
@@ -363,6 +343,106 @@
       loginView.classList.remove('d-none');
     }
     console.log('View switched to:', view);
+  }
+
+  // ---- Theme (per account) ----
+  const THEME_COLORS = [
+    // Pastel
+    '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF',
+    '#E6FBFF', '#FDE2E4', '#E2ECE9', '#F7D6E0', '#FFF1CF', '#D4F1F4', '#E2F0CB', '#D6E2E9',
+    // Vibrant
+    '#FF5252', '#FF9800', '#FFD600', '#00C853', '#00B8D4', '#2979FF', '#651FFF', '#D500F9',
+    // Dark
+    '#212121', '#263238', '#37474F', '#455A64', '#607D8B', '#1A237E', '#004D40', '#B71C1C'
+  ];
+
+  function getContrastYIQ(hexcolor) {
+    hexcolor = hexcolor.replace('#','');
+    if (hexcolor.length === 3) hexcolor = hexcolor.split('').map(x=>x+x).join('');
+    const r = parseInt(hexcolor.substr(0,2),16);
+    const g = parseInt(hexcolor.substr(2,2),16);
+    const b = parseInt(hexcolor.substr(4,2),16);
+    const yiq = ((r*299)+(g*587)+(b*114))/1000;
+    return yiq >= 128 ? 'dark' : 'light';
+  }
+
+  function renderThemePalette(selected) {
+    if (!themePalette) return;
+    themePalette.innerHTML = THEME_COLORS.map(c => {
+      const contrast = getContrastYIQ(c);
+      return `<span class="theme-dot${selected===c?' active':''}" data-color="${c}" data-contrast="${contrast}" style="background:${c}"></span>`;
+    }).join('');
+  }
+
+  function applyTheme(color) {
+    if (!color) return;
+    const root = document.documentElement;
+    // Accent and interactive states
+    root.style.setProperty('--accent-color', color);
+    root.style.setProperty('--accent-hover', shade(color, -12));
+    root.style.setProperty('--accent2-color', shade(color, -22));
+    root.style.setProperty('--accent-light', hexToRgba(color, 0.12));
+    root.style.setProperty('--accent-lighter', hexToRgba(color, 0.06));
+
+    // Pastel background and surfaces derived from the accent (towards white)
+    const bg = shade(color, 96);       // very light tint
+    const surface = shade(color, 94);  // slightly stronger than bg
+    const border = hexToRgba(shade(color, 75), 0.6); // subtle border from accent
+
+    root.style.setProperty('--bg-color', bg);
+    root.style.setProperty('--surface-color', surface);
+    root.style.setProperty('--border-color', border);
+
+    // Text colors on bg/surfaces (keep dark for pastel backgrounds)
+    root.style.setProperty('--on-bg-color', '#1d1d1b');
+    root.style.setProperty('--on-surface-color', '#1d1d1b');
+
+    // Text color on accent (ensure contrast)
+    const accentContrast = getContrastYIQ(color);
+    const onAccent = accentContrast === 'light' ? '#ffffff' : '#1d1d1b';
+    root.style.setProperty('--on-accent-color', onAccent);
+
+    // Legacy token compatibility
+    root.style.setProperty('--primary-color', '#1d1d1b');
+    root.style.setProperty('--secondary-color', bg);
+
+    // Optional Bootstrap semantic variables (only where we reference them)
+    root.style.setProperty('--bs-warning', color);
+    root.style.setProperty('--bs-primary', color);
+  }
+
+  // Simple shade util for hover
+  function shade(hex, percent) {
+    const f = parseInt(hex.slice(1),16), t = percent<0?0:255, p = Math.abs(percent)/100;
+    const R = f>>16, G = f>>8&0x00FF, B = f&0x0000FF;
+    const to = x => Math.round((t - x)*p + x);
+    return `#${(0x1000000 + (to(R)<<16) + (to(G)<<8) + to(B)).toString(16).slice(1)}`;
+  }
+
+  function hexToRgba(hex, alpha=1) {
+    hex = hex.replace('#','');
+    if (hex.length === 3) hex = hex.split('').map(x=>x+x).join('');
+    const r = parseInt(hex.substr(0,2),16);
+    const g = parseInt(hex.substr(2,2),16);
+    const b = parseInt(hex.substr(4,2),16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  async function saveAccountTheme(color) {
+    if (!state.account) return;
+    try {
+      await colAccounts().doc(state.account.id).set({ themeColor: color, updatedAt: Date.now() }, { merge: true });
+    } catch (e) { console.warn('Falha ao salvar tema:', e); }
+  }
+
+  async function loadAccountTheme() {
+    if (!state.account) return;
+    try {
+      const snap = await colAccounts().doc(state.account.id).get();
+      const color = snap.exists ? snap.data().themeColor : null;
+      if (color) { applyTheme(color); }
+      renderThemePalette(color);
+    } catch (e) { console.warn('Falha ao carregar tema:', e); renderThemePalette(null); }
   }
 
   function setSaving(flag){
@@ -896,34 +976,11 @@
       updatedAt: Date.now()
     };
     await dailyDoc(state.date, state.account.id).set(payload, { merge: true });
-    
-    // Salvar também os dados de qualificações se existirem
-    if (state.pipeRunData && state.pipeRunData.qualificados > 0) {
-      await saveQualificationsData(state.date, state.account.id, state.pipeRunData.qualificados);
-    }
-    
     setSaving(false);
     showSuccess('Dados salvos automaticamente', 2000);
   }
 
   const saveDailyDebounced = debounce(saveDaily, 500);
-
-  // Função para salvar dados de qualificações diárias
-  async function saveQualificationsData(date, accountId, qualificados) {
-    try {
-      const qualData = {
-        accountId: accountId,
-        date: date,
-        qualificados: qualificados,
-        dayOfWeek: new Date(date + 'T00:00:00').getDay(), // 0=domingo, 1=segunda, etc.
-        updatedAt: Date.now()
-      };
-      await qualificationsDoc(accountId, date).set(qualData, { merge: true });
-      console.log(`💾 Dados de qualificação salvos: ${accountId} - ${date} - ${qualificados} qualificados`);
-    } catch (error) {
-      console.error('❌ Erro ao salvar dados de qualificações:', error);
-    }
-  }
 
   async function listAccounts(){
     const snap = await colAccounts().get();
@@ -1636,9 +1693,8 @@
     const diaSemana = hoje.getDay(); // 0=dom, 1=seg, 2=ter...
     const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
     
-    // Atualizar período da semana
-    weeklyPeriodEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
-    weekDatesEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
+  // Atualizar período da semana (mostrar apenas uma vez)
+  weekDatesEl.textContent = formatWeekPeriod(currentWeek.start, currentWeek.end);
     
     // Mostrar informações detalhadas do status semanal
     const statusInfo = getWeeklyStatus();
@@ -1664,7 +1720,7 @@
       `;
     }
     
-    // Calcular progresso
+  // Calcular progresso
     const percentage = Math.min((state.progressData.currentWeekGanhos / state.progressData.target) * 100, 100);
     const isCompleted = state.progressData.currentWeekGanhos >= state.progressData.target;
     const wasCompleted = progressBar.classList.contains('completed');
@@ -1698,6 +1754,18 @@
       }
     } else if (percentage >= 70) {
       progressBar.classList.add('bg-warning');
+    }
+
+    // Mostrar apenas quanto falta para a meta, com o mesmo estilo do badge de período
+    const remaining = Math.max(0, state.progressData.target - state.progressData.currentWeekGanhos);
+    if (weeklyPeriodEl) {
+      weeklyPeriodEl.classList.remove('motivation-done');
+      const prefix = '&nbsp;&nbsp;'; // espaço após o badge de período
+      if (isCompleted) {
+        weeklyPeriodEl.innerHTML = `${prefix}<span class="period-badge">Meta atingida</span>`;
+      } else {
+        weeklyPeriodEl.innerHTML = `${prefix}<span class="period-badge">${remaining} para a meta</span>`;
+      }
     }
     
     // Atualizar estatísticas
@@ -2325,305 +2393,6 @@
     });
   }
 
-  // ===========================
-  // FUNÇÕES DO MODAL DE ANÁLISE DE QUALIFICAÇÕES
-  // ===========================
-  // Análise de Qualificações por Dia da Semana
-  // ===========================
-
-  async function openQualificationsAnalysisModal() {
-    console.log('📊 Abrindo modal de análise de qualificações...');
-    
-    // Carregar lista de usuários disponíveis
-    await loadAvailableUsers();
-    
-    // Resetar estado
-    state.qualificationsAnalysis.selectedUsers = [];
-    
-    // Esconder resultados
-    qualificationsResults.classList.add('d-none');
-    qualificationsLoading.style.display = 'none';
-    qualificationsEmpty.style.display = 'none';
-    exportQualificationsBtn.classList.add('d-none');
-    
-    qualificationsAnalysisModal.show();
-  }
-
-  async function loadAvailableUsers() {
-    try {
-      const accounts = await colAccounts().get();
-      state.qualificationsAnalysis.availableUsers = accounts.docs.map(doc => doc.data());
-      renderAvailableUsers();
-      renderSelectedUsers();
-    } catch (error) {
-      console.error('❌ Erro ao carregar usuários:', error);
-      showError('Erro ao carregar lista de usuários');
-    }
-  }
-
-  function renderAvailableUsers() {
-    availableUsersList.innerHTML = '';
-    
-    state.qualificationsAnalysis.availableUsers.forEach(user => {
-      if (!state.qualificationsAnalysis.selectedUsers.includes(user.id)) {
-        const userItem = document.createElement('div');
-        userItem.className = 'user-item';
-        userItem.innerHTML = `
-          <div class="d-flex justify-content-between align-items-center w-100">
-            <span><strong>${user.name}</strong> (${user.id})</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="selectUser('${user.id}')">
-              <i class="bi bi-plus"></i> Selecionar
-            </button>
-          </div>
-        `;
-        availableUsersList.appendChild(userItem);
-      }
-    });
-  }
-
-  function renderSelectedUsers() {
-    selectedUsersList.innerHTML = '';
-    
-    if (state.qualificationsAnalysis.selectedUsers.length === 0) {
-      selectedUsersList.innerHTML = '<p class="text-muted text-center">Nenhum usuário selecionado</p>';
-      return;
-    }
-    
-    state.qualificationsAnalysis.selectedUsers.forEach(userId => {
-      const user = state.qualificationsAnalysis.availableUsers.find(u => u.id === userId);
-      if (user) {
-        const userItem = document.createElement('div');
-        userItem.className = 'user-item selected';
-        userItem.innerHTML = `
-          <div class="d-flex justify-content-between align-items-center w-100">
-            <span><strong>${user.name}</strong> (${user.id})</span>
-            <button class="btn btn-sm btn-outline-danger" onclick="deselectUser('${user.id}')">
-              <i class="bi bi-x"></i> Remover
-            </button>
-          </div>
-        `;
-        selectedUsersList.appendChild(userItem);
-      }
-    });
-  }
-
-  window.selectUser = function(userId) {
-    if (!state.qualificationsAnalysis.selectedUsers.includes(userId)) {
-      state.qualificationsAnalysis.selectedUsers.push(userId);
-      renderAvailableUsers();
-      renderSelectedUsers();
-    }
-  };
-
-  window.deselectUser = function(userId) {
-    state.qualificationsAnalysis.selectedUsers = state.qualificationsAnalysis.selectedUsers.filter(id => id !== userId);
-    renderAvailableUsers();
-    renderSelectedUsers();
-  };
-
-  function selectAllUsers() {
-    state.qualificationsAnalysis.selectedUsers = [...state.qualificationsAnalysis.availableUsers.map(u => u.id)];
-    renderAvailableUsers();
-    renderSelectedUsers();
-  }
-
-  async function loadQualificationsData() {
-    if (state.qualificationsAnalysis.selectedUsers.length === 0) {
-      showWarning('Selecione pelo menos um usuário para análise');
-      return;
-    }
-
-    qualificationsLoading.style.display = 'block';
-    qualificationsResults.classList.add('d-none');
-    qualificationsEmpty.style.display = 'none';
-
-    try {
-      // Carregar todos os dados de qualificações para os usuários selecionados
-      const qualificationsData = {};
-      
-      for (const userId of state.qualificationsAnalysis.selectedUsers) {
-        qualificationsData[userId] = await loadUserQualifications(userId);
-      }
-
-      state.qualificationsAnalysis.qualificationsData = qualificationsData;
-
-      // Verificar se há dados
-      const hasData = Object.values(qualificationsData).some(userData => 
-        Object.keys(userData).length > 0
-      );
-
-      if (hasData) {
-        renderQualificationsAnalysis();
-        qualificationsResults.classList.remove('d-none');
-        exportQualificationsBtn.classList.remove('d-none');
-      } else {
-        qualificationsEmpty.style.display = 'block';
-      }
-
-    } catch (error) {
-      console.error('❌ Erro ao carregar dados de qualificações:', error);
-      showError('Erro ao carregar dados de qualificações');
-    } finally {
-      qualificationsLoading.style.display = 'none';
-    }
-  }
-
-  async function loadUserQualifications(userId) {
-    const qualificationsData = {};
-    
-    try {
-      // Buscar dados de qualificações na coleção /qualifications/{accountId}/days/
-      const qualificationsRef = db.collection('qualifications').doc(userId).collection('days');
-      const snapshot = await qualificationsRef.get();
-
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.date && data.qualificados >= 0) {
-          qualificationsData[data.date] = data.qualificados;
-        }
-      });
-
-    } catch (error) {
-      console.error(`❌ Erro ao carregar qualificações para usuário ${userId}:`, error);
-    }
-
-    return qualificationsData;
-  }
-
-  function renderQualificationsAnalysis() {
-    renderWeeklyMetrics();
-    renderQualificationsTable();
-  }
-
-  function renderWeeklyMetrics() {
-    const weeklyData = calculateWeeklyMetrics();
-    const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-    const dayClasses = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-
-    weeklyMetrics.innerHTML = '';
-
-    for (let i = 0; i < 7; i++) {
-      const total = weeklyData[i] || 0;
-      
-      const col = document.createElement('div');
-      col.className = 'col-md-4 col-lg-3 mb-3';
-      col.innerHTML = `
-        <div class="weekly-metric-card ${dayClasses[i]}">
-          <div class="weekly-metric-number">${total}</div>
-          <div class="weekly-metric-label">${dayLabels[i]}</div>
-        </div>
-      `;
-      weeklyMetrics.appendChild(col);
-    }
-  }
-
-  function calculateWeeklyMetrics() {
-    const weeklyData = [0, 0, 0, 0, 0, 0, 0]; // [domingo, segunda, terça, quarta, quinta, sexta, sábado]
-
-    // Somar qualificações de todos os usuários selecionados por dia da semana
-    Object.values(state.qualificationsAnalysis.qualificationsData).forEach(userData => {
-      Object.entries(userData).forEach(([date, qualificados]) => {
-        const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-        weeklyData[dayOfWeek] += qualificados;
-      });
-    });
-
-    return weeklyData;
-  }
-
-  function renderQualificationsTable() {
-    qualificationsTbody.innerHTML = '';
-
-    // Obter todas as datas únicas dos dados
-    const allDates = new Set();
-    Object.values(state.qualificationsAnalysis.qualificationsData).forEach(userData => {
-      Object.keys(userData).forEach(date => allDates.add(date));
-    });
-
-    // Converter para array e ordenar (mais recentes primeiro)
-    const dates = Array.from(allDates).sort().reverse();
-
-    dates.forEach(date => {
-      const row = document.createElement('tr');
-      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-      const dayNames = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
-      const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-
-      // Calcular total para o dia (soma de todos os usuários selecionados)
-      let total = 0;
-      state.qualificationsAnalysis.selectedUsers.forEach(userId => {
-        const userData = state.qualificationsAnalysis.qualificationsData[userId];
-        total += userData[date] || 0;
-      });
-
-      row.innerHTML = `
-        <td>${new Date(date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-        <td><span class="day-badge-qual ${dayNames[dayOfWeek]}">${dayLabels[dayOfWeek]}</span></td>
-        <td class="text-center fw-bold">${total}</td>
-      `;
-
-      // Destacar finais de semana
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        row.classList.add('qualifications-row-highlight');
-      }
-
-      qualificationsTbody.appendChild(row);
-    });
-  }
-
-  function exportQualificationsCSV() {
-    const csvData = [];
-    const headers = ['Data', 'Dia da Semana', 'Qualificações Total'];
-    
-    csvData.push(headers.join(','));
-
-    // Obter todas as datas únicas
-    const allDates = new Set();
-    Object.values(state.qualificationsAnalysis.qualificationsData).forEach(userData => {
-      Object.keys(userData).forEach(date => allDates.add(date));
-    });
-
-    const dates = Array.from(allDates).sort();
-    const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-
-    dates.forEach(date => {
-      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-      let total = 0;
-      
-      state.qualificationsAnalysis.selectedUsers.forEach(userId => {
-        const userData = state.qualificationsAnalysis.qualificationsData[userId];
-        total += userData[date] || 0;
-      });
-
-      const row = [
-        new Date(date + 'T00:00:00').toLocaleDateString('pt-BR'),
-        dayLabels[dayOfWeek],
-        total
-      ];
-      
-      csvData.push(row.join(','));
-    });
-
-    // Criar e fazer download do arquivo CSV
-    const csvContent = csvData.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `qualificacoes_analise_${new Date().toISOString().slice(0, 10)}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      showSuccess('Relatório de qualificações exportado com sucesso!');
-    } else {
-      showError('Seu navegador não suporta download de arquivos');
-    }
-  }
-
   // ---- Report Generation ----
   function buildReportText({ titleDate, startTime, endTime, products, pipeRunData }){
     const parts = [];
@@ -2971,6 +2740,32 @@
     show('login');
   });
 
+  // Theme UI events
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      if (!themePalette) return;
+      const visible = !themePalette.classList.contains('d-none');
+      themePalette.classList.toggle('d-none', visible);
+      if (!visible) {
+        // Ensure palette rendered with current selection
+        const current = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
+        renderThemePalette(current);
+      }
+    });
+  }
+
+  if (themePalette) {
+    themePalette.addEventListener('click', async (e) => {
+      const dot = e.target.closest('.theme-dot');
+      if (!dot) return;
+      const color = dot.dataset.color;
+      applyTheme(color);
+      await saveAccountTheme(color);
+      // update active mark
+      document.querySelectorAll('.theme-dot').forEach(d => d.classList.toggle('active', d===dot));
+    });
+  }
+
   dateInput.addEventListener('change', async ()=>{
     state.date = dateInput.value;
     
@@ -2993,23 +2788,6 @@
   
   if (weeklyHistoryBtn) {
     weeklyHistoryBtn.addEventListener('click', openWeeklyHistoryModal);
-  }
-
-  // Qualifications analysis modal listeners
-  if (qualAnalysisBtn) {
-    qualAnalysisBtn.addEventListener('click', openQualificationsAnalysisModal);
-  }
-
-  if (loadQualificationsBtn) {
-    loadQualificationsBtn.addEventListener('click', loadQualificationsData);
-  }
-
-  if (selectAllUsersBtn) {
-    selectAllUsersBtn.addEventListener('click', selectAllUsers);
-  }
-
-  if (exportQualificationsBtn) {
-    exportQualificationsBtn.addEventListener('click', exportQualificationsCSV);
   }
   
   if (toggleDailyDetailsBtn) {
@@ -3682,6 +3460,8 @@
   
   // Carregar dados de progresso
   await loadProgressData();
+  // Carregar e aplicar tema do usuário
+  await loadAccountTheme();
   
   // Configurar event listeners para progress
   if (refreshProgressBtn) {
