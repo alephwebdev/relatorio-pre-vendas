@@ -2,10 +2,12 @@
   // URL do mini hospedado
   const MINI_URL = 'https://relatorio.fastsistemasconstrutivos.com.br/mini/index.html';
 
-  if (window.__rpvMiniInjected) return;
-  window.__rpvMiniInjected = true;
+  // Helper para criação/injeção única
+  function injectOnce(){
+    if (window.__rpvMiniInjected && window.__rpvMiniRoot) return window.__rpvMiniRoot;
+    window.__rpvMiniInjected = true;
 
-  const style = document.createElement('style');
+    const style = document.createElement('style');
   style.textContent = `
   #rpv-mini-fab { position: fixed; top: 10px; right: 10px; z-index: 2147483647; pointer-events: none; }
     #rpv-mini-card { width: 360px; background: #ffffff; border-radius: 0; box-shadow: none; overflow: hidden; pointer-events: auto; border: 1px solid rgba(0,0,0,.2); }
@@ -14,7 +16,7 @@
   `;
   document.documentElement.appendChild(style);
 
-  const root = document.createElement('div');
+    const root = document.createElement('div');
   root.id = 'rpv-mini-fab';
   const card = document.createElement('div');
   card.id = 'rpv-mini-card';
@@ -25,10 +27,13 @@
   iframe.id = 'rpv-mini-iframe';
   iframe.src = MINI_URL;
 
-  card.appendChild(drag);
-  card.appendChild(iframe);
-  root.appendChild(card);
-  document.documentElement.appendChild(root);
+    card.appendChild(drag);
+    card.appendChild(iframe);
+    root.appendChild(card);
+    document.documentElement.appendChild(root);
+
+    window.__rpvMiniRoot = root;
+    window.__rpvMiniIframe = iframe;
 
   // auto-resize via postMessage
   window.addEventListener('message', (e) => {
@@ -71,4 +76,25 @@
     }
     drag.addEventListener('mousedown', onDown);
   })();
+
+    return root;
+  }
+
+  // Garante que o painel exista na carga do content_script
+  const root = injectOnce();
+
+  // Toggle via mensagem do background
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg) return;
+      if (msg.type === 'rpv-toggle') {
+        const r = window.__rpvMiniRoot || root || injectOnce();
+        if (!r) return;
+        const current = getComputedStyle(r).display;
+        r.style.display = current === 'none' ? 'block' : 'none';
+      }
+    });
+  } catch (_) {
+    // ignore
+  }
 })();

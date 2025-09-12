@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="../styles.css" />
   <style>
     /* Compact adjustments for mini version */
+  html, body { min-height: 0 !important; height: auto !important; }
   body { padding: 0; overflow-x: hidden; }
     .login-card { max-width: 380px; }
   .config-card, .products-card { margin-bottom: .5rem; }
@@ -371,14 +372,18 @@
           parent.postMessage({ type: 'rpv-mini-resize', height: h }, '*');
         } catch(_){}
       }
-      const ro = new ResizeObserver(()=>notifyHeight());
-      ro.observe(document.body);
+    const ro = new ResizeObserver(()=>notifyHeight());
+    ro.observe(document.body);
+    ro.observe(document.documentElement);
+    // Mutation observer para mudanças de DOM que não disparam resize
+    const mo = new MutationObserver(()=>notifyHeight());
+    mo.observe(document.body, { childList: true, attributes: true, subtree: true });
       if (btn) {
         btn.addEventListener('click', ()=>{
           const root = document.documentElement;
           const collapsed = root.classList.toggle('mini-collapsed');
           btn.innerHTML = collapsed ? '<i class="bi bi-chevron-up"></i>' : '<i class="bi bi-chevron-down"></i>';
-          setTimeout(notifyHeight, 50);
+      setTimeout(notifyHeight, 30);
         });
       }
   window.addEventListener('load', ()=> setTimeout(notifyHeight, 120));

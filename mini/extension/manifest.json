@@ -3,10 +3,20 @@
   "name": "Relatório Pré-vendas - Overlay",
   "version": "1.0.0",
   "description": "Painel flutuante fixo no topo com a versão compacta do Relatório Pré-vendas.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {
-    "default_title": "Mostrar/ocultar painel"
+    "default_title": "Mostrar/ocultar painel",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "service-worker.js"
