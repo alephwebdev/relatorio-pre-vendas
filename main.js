@@ -2210,118 +2210,277 @@
   }
 
   function triggerCompletionCelebration() {
-    console.log('🎉 Meta completada! Iniciando celebração...');
+    console.log('🎉 Meta completada! Iniciando celebração ÉPICA...');
     
-    // 1. Mostrar mensagem de parabéns
-    showCelebrationMessage();
+    // 1. Criar modal fullscreen de celebração
+    createEpicCelebrationModal();
     
     // 2. Adicionar classe de celebração ao container
     const progressContainer = document.querySelector('.progress-container');
     progressContainer.classList.add('progress-celebration');
     
-    // 3. Criar confetti
-    createConfetti();
+    // 3. Iniciar efeitos visuais contínuos
+    startContinuousEffects();
     
-    // 4. Tocar som de celebração (se disponível)
-    playCompletionSound();
+    // 4. Tocar som de celebração melhorado
+    playEpicCompletionSound();
     
     // 5. Salvar achievement no Firebase
     saveCompletionAchievement();
     
-    // Remover efeitos após 5 segundos
-    setTimeout(() => {
-      progressContainer.classList.remove('progress-celebration');
-      removeConfetti();
-    }, 5000);
+    // Os efeitos só param quando o usuário clicar no botão
+    // (não há mais setTimeout automático)
   }
 
-  function showCelebrationMessage() {
+  function createEpicCelebrationModal() {
     const messages = [
-      '🎉 Parabéns! Meta semanal alcançada!',
-      '🌟 Excelente trabalho! Você atingiu sua meta!',
-      '🚀 Fantástico! Meta de 130 ganhos completada!',
-      '🏆 Sucesso! Você é um campeão de vendas!',
-      '⭐ Incrível! Meta semanal conquistada!'
+      'Você conseguiu! 🎯',
+      'Meta conquistada! 🚀',
+      'Excelente trabalho! ⭐',
+      'Parabéns campeão! 🏆',
+      'Sucesso total! 🌟'
+    ];
+    
+    const encouragements = [
+      'Obrigado pelo seu empenho e dedicação!',
+      'Sua determinação fez a diferença!',
+      'Continue assim, você é incrível!',
+      'Seu esforço está dando frutos!',
+      'Você é um verdadeiro profissional!'
     ];
     
     const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+    const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
     
-    // Toast especial de celebração
-    const toastId = `celebration-toast-${uid()}`;
-    const toastHTML = `
-      <div id="${toastId}" class="toast custom-toast toast-success celebration-toast" role="alert">
-        <div class="toast-header bg-success text-white">
-          <strong class="me-auto">🎉 META ALCANÇADA!</strong>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-        </div>
-        <div class="toast-body">
-          <div class="text-center">
-            <div class="celebration-icon mb-2">🏆</div>
-            <strong>${randomMessage}</strong>
+    const modalId = `epic-celebration-${uid()}`;
+    const modalHTML = `
+      <div id="${modalId}" class="celebration-modal-overlay">
+        <div class="celebration-modal">
+          <span class="celebration-emoji">�</span>
+          <h1 class="celebration-title">${randomMessage}</h1>
+          <p class="celebration-message">${randomEncouragement}</p>
+          <div class="celebration-stats">
+            <strong>${state.progressData.currentWeekGanhos} de ${state.progressData.target} ganhos conquistados!</strong>
             <br>
-            <small class="text-muted">Você completou ${state.progressData.currentWeekGanhos} de ${state.progressData.target} ganhos!</small>
+            <span>Meta semanal 100% concluída! 🎉</span>
           </div>
+          <button class="celebration-button" onclick="closeCelebrationModal('${modalId}')">
+            Continuar trabalhando! 💪
+          </button>
         </div>
       </div>
     `;
     
-    const toastContainer = document.getElementById('toast-container');
-    toastContainer.insertAdjacentHTML('beforeend', toastHTML);
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
     
-    const toastElement = document.getElementById(toastId);
-    const toast = new bootstrap.Toast(toastElement, {
-      autohide: true,
-      delay: 8000 // 8 segundos para celebração
-    });
-    
-    toast.show();
-    
-    // Remover após ocultar
-    toastElement.addEventListener('hidden.bs.toast', () => {
-      toastElement.remove();
-    });
+    // Remover auto-close - só fecha quando clicar no botão
+    // setTimeout(() => {
+    //   closeCelebrationModal(modalId);
+    // }, 8000);
   }
-
-  function createConfetti() {
-    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3'];
-    
-    for (let i = 0; i < 50; i++) {
+  
+  // Função global para fechar o modal E parar todos os efeitos
+  window.closeCelebrationModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.style.animation = 'celebration-overlay-fadein 0.3s ease-out reverse';
       setTimeout(() => {
-        const confetti = document.createElement('div');
-        confetti.className = 'confetti';
-        confetti.style.left = Math.random() * 100 + '%';
-        confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-        confetti.style.animationDuration = (Math.random() * 2 + 1) + 's';
-        document.body.appendChild(confetti);
-        
-        // Remover após animação
-        setTimeout(() => {
-          if (confetti.parentNode) {
-            confetti.parentNode.removeChild(confetti);
-          }
-        }, 3000);
-      }, i * 100);
+        modal.remove();
+      }, 300);
     }
+    
+    // Parar todos os efeitos quando fechar o modal
+    stopAllCelebrationEffects();
   }
 
-  function removeConfetti() {
-    const confettiElements = document.querySelectorAll('.confetti');
-    confettiElements.forEach(confetti => {
-      if (confetti.parentNode) {
-        confetti.parentNode.removeChild(confetti);
+  // Variáveis para controlar os efeitos contínuos
+  let celebrationIntervals = [];
+  let celebrationTimeouts = [];
+
+  function startContinuousEffects() {
+    // Limpar efeitos anteriores se existirem
+    stopAllCelebrationEffects();
+    
+    // Adicionar classe de celebração ao container
+    const progressContainer = document.querySelector('.progress-container');
+    progressContainer.classList.add('progress-celebration');
+    
+    // Iniciar confetti contínuo
+    startContinuousConfetti();
+    
+    // Iniciar fogos de artifício contínuos
+    startContinuousFireworks();
+    
+    // Iniciar estrelas cadentes contínuas
+    startContinuousShootingStars();
+  }
+
+  function startContinuousConfetti() {
+    const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3'];
+    
+    // Criar confetti a cada 800ms
+    const confettiInterval = setInterval(() => {
+      for (let i = 0; i < 15; i++) {
+        const timeout = setTimeout(() => {
+          const confetti = document.createElement('div');
+          confetti.className = 'confetti-piece';
+          confetti.style.left = Math.random() * 100 + '%';
+          confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+          confetti.style.animationDuration = (Math.random() * 2 + 2) + 's';
+          confetti.style.animationDelay = (Math.random() * 0.5) + 's';
+          
+          // Formas variadas
+          if (Math.random() > 0.5) {
+            confetti.style.borderRadius = '50%';
+          } else {
+            confetti.style.transform = 'rotate(45deg)';
+          }
+          
+          const container = document.createElement('div');
+          container.className = 'confetti-epic celebration-effect';
+          container.appendChild(confetti);
+          document.body.appendChild(container);
+          
+          // Remover após animação
+          const cleanupTimeout = setTimeout(() => {
+            if (container.parentNode) {
+              container.parentNode.removeChild(container);
+            }
+          }, 5000);
+          celebrationTimeouts.push(cleanupTimeout);
+        }, i * 50);
+        celebrationTimeouts.push(timeout);
+      }
+    }, 800);
+    
+    celebrationIntervals.push(confettiInterval);
+  }
+
+  function startContinuousFireworks() {
+    const colors = ['#FF6B6B', '#4ECDC4', '#FFD700', '#FF9FF3', '#54A0FF'];
+    
+    // Criar fogos de artifício a cada 2.5 segundos
+    const fireworksInterval = setInterval(() => {
+      const firework = document.createElement('div');
+      firework.className = 'firework celebration-effect';
+      firework.style.left = (20 + Math.random() * 60) + '%';
+      firework.style.top = (20 + Math.random() * 40) + '%';
+      
+      // Criar sparks do firework
+      for (let j = 0; j < 20; j++) {
+        const spark = document.createElement('div');
+        spark.className = 'firework-spark';
+        spark.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        
+        const angle = (j / 20) * Math.PI * 2;
+        const distance = 50 + Math.random() * 50;
+        const x = Math.cos(angle) * distance;
+        const y = Math.sin(angle) * distance;
+        
+        spark.style.setProperty('--dx', x + 'px');
+        spark.style.setProperty('--dy', y + 'px');
+        spark.style.transform = `translate(${x}px, ${y}px)`;
+        
+        firework.appendChild(spark);
+      }
+      
+      document.body.appendChild(firework);
+      
+      // Remover após animação
+      const cleanupTimeout = setTimeout(() => {
+        if (firework.parentNode) {
+          firework.parentNode.removeChild(firework);
+        }
+      }, 2000);
+      celebrationTimeouts.push(cleanupTimeout);
+    }, 2500);
+    
+    celebrationIntervals.push(fireworksInterval);
+  }
+
+  function startContinuousShootingStars() {
+    // Criar estrelas cadentes a cada 1.8 segundos
+    const starsInterval = setInterval(() => {
+      const star = document.createElement('div');
+      star.className = 'shooting-star celebration-effect';
+      star.style.top = Math.random() * 50 + '%';
+      star.style.left = '-10px';
+      star.style.animationDelay = (Math.random() * 0.5) + 's';
+      
+      document.body.appendChild(star);
+      
+      // Remover após animação
+      const cleanupTimeout = setTimeout(() => {
+        if (star.parentNode) {
+          star.parentNode.removeChild(star);
+        }
+      }, 2000);
+      celebrationTimeouts.push(cleanupTimeout);
+    }, 1800);
+    
+    celebrationIntervals.push(starsInterval);
+  }
+
+  function stopAllCelebrationEffects() {
+    // Limpar todos os intervalos
+    celebrationIntervals.forEach(interval => {
+      clearInterval(interval);
+    });
+    celebrationIntervals = [];
+    
+    // Limpar todos os timeouts
+    celebrationTimeouts.forEach(timeout => {
+      clearTimeout(timeout);
+    });
+    celebrationTimeouts = [];
+    
+    // Remover classe de celebração do container
+    const progressContainer = document.querySelector('.progress-container');
+    if (progressContainer) {
+      progressContainer.classList.remove('progress-celebration');
+    }
+    
+    // Remover todos os elementos de celebração existentes
+    const effects = document.querySelectorAll('.celebration-effect, .confetti, .confetti-epic, .firework, .shooting-star');
+    effects.forEach(effect => {
+      if (effect.parentNode) {
+        effect.parentNode.removeChild(effect);
+      }
+    });
+    
+    // Remover modal se ainda estiver aberto
+    const modals = document.querySelectorAll('.celebration-modal-overlay');
+    modals.forEach(modal => {
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
       }
     });
   }
 
-  function playCompletionSound() {
-    // Tentar tocar um som de celebração usando Web Audio API
+  // Função legacy mantida para compatibilidade
+  function removeAllCelebrationEffects() {
+    stopAllCelebrationEffects();
+  }
+
+  function playEpicCompletionSound() {
+    // Tentar tocar uma melodia épica de celebração
     try {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       
-      // Criar uma sequência de notas alegres
-      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      // Melodia de vitória mais elaborada - "Ta-da!" épico
+      const melody = [
+        { freq: 523.25, duration: 0.3, delay: 0 },     // C5
+        { freq: 659.25, duration: 0.3, delay: 150 },   // E5
+        { freq: 783.99, duration: 0.4, delay: 300 },   // G5
+        { freq: 1046.50, duration: 0.8, delay: 500 },  // C6 (longo)
+        
+        // Segunda parte - fanfarra
+        { freq: 1318.51, duration: 0.2, delay: 1300 }, // E6
+        { freq: 1174.66, duration: 0.2, delay: 1450 }, // D6
+        { freq: 1046.50, duration: 0.6, delay: 1600 }, // C6 (final)
+      ];
       
-      notes.forEach((frequency, index) => {
+      melody.forEach(note => {
         setTimeout(() => {
           const oscillator = audioContext.createOscillator();
           const gainNode = audioContext.createGain();
@@ -2329,16 +2488,45 @@
           oscillator.connect(gainNode);
           gainNode.connect(audioContext.destination);
           
-          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+          oscillator.frequency.setValueAtTime(note.freq, audioContext.currentTime);
           oscillator.type = 'sine';
           
-          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+          gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + note.duration);
           
           oscillator.start(audioContext.currentTime);
-          oscillator.stop(audioContext.currentTime + 0.3);
-        }, index * 150);
+          oscillator.stop(audioContext.currentTime + note.duration);
+        }, note.delay);
       });
+      
+      // Adicionar efeito de "explosão" sonora no final
+      setTimeout(() => {
+        const whiteNoise = audioContext.createBufferSource();
+        const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.1, audioContext.sampleRate);
+        const channelData = buffer.getChannelData(0);
+        
+        for (let i = 0; i < channelData.length; i++) {
+          channelData[i] = (Math.random() * 2 - 1) * 0.1;
+        }
+        
+        whiteNoise.buffer = buffer;
+        
+        const filterNode = audioContext.createBiquadFilter();
+        filterNode.type = 'lowpass';
+        filterNode.frequency.setValueAtTime(2000, audioContext.currentTime);
+        
+        const explosionGain = audioContext.createGain();
+        explosionGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+        explosionGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        
+        whiteNoise.connect(filterNode);
+        filterNode.connect(explosionGain);
+        explosionGain.connect(audioContext.destination);
+        
+        whiteNoise.start(audioContext.currentTime);
+        whiteNoise.stop(audioContext.currentTime + 0.1);
+      }, 2000);
+      
     } catch (error) {
       console.log('Audio não disponível:', error);
     }
