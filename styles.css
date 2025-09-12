@@ -487,6 +487,244 @@ body {
   animation: celebration-spin 2s ease-in-out infinite;
 }
 
+/* ===== Modal simples de "Meta batida" ===== */
+.goal-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1055; /* acima dos toasts e próximo aos modals */
+  animation: overlayIn 0.35s ease-out;
+}
+.goal-modal-overlay.closing { animation: overlayOut 0.2s ease-in forwards; }
+
+@keyframes overlayIn { from { opacity: 0 } 50% { opacity: .75 } to { opacity: 1 } }
+@keyframes overlayOut { from { opacity: 1 } to { opacity: 0 } }
+
+.goal-modal {
+  background: #fff;
+  border-radius: 0;
+  width: min(92vw, 480px);
+  padding: 0 24px 22px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  position: relative;
+  transform: translateY(24px);
+  opacity: 0;
+  animation: modalRise .45s cubic-bezier(.2,.9,.2,1) forwards;
+}
+
+/* Cantoneiras (brackets) para um look mais técnico e flat */
+.goal-modal::before,
+.goal-modal::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #111;
+}
+.goal-modal::before { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+.goal-modal::after  { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+.goal-modal .corner-bl,
+.goal-modal .corner-br { content: ''; position: absolute; width: 24px; height: 24px; border: 2px solid #111; bottom: 10px; }
+.goal-modal .corner-bl { left: 10px; border-right: none; border-top: none; }
+.goal-modal .corner-br { right: 10px; border-left: none; border-top: none; }
+
+@keyframes modalRise {
+  0% { transform: translateY(24px); opacity: 0; }
+  60% { transform: translateY(-4px); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.goal-close-btn {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.goal-close-btn:hover { background: #efefef; color: #111; }
+
+.goal-topbar {
+  height: 6px;
+  background: var(--accent-color);
+  width: 0;
+  animation: barGrow .5s .1s ease-out forwards;
+}
+
+@keyframes barGrow { from { width: 0 } to { width: 100% } }
+
+.goal-content { text-align: center; }
+
+.goal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-light);
+  color: var(--accent-color);
+  padding: 6px 10px;
+  border-radius: 0;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.goal-badge i { font-size: 1rem; }
+.goal-badge span { font-size: 0.9rem; letter-spacing: 0.2px; }
+
+.polaroid {
+  background: #fff;
+  border-radius: 0;
+  padding: 12px 12px 8px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  /* textura sutil de papel */
+  background-image: radial-gradient(rgba(0,0,0,0.04) 1px, transparent 1px);
+  background-size: 6px 6px;
+  width: 220px;
+  margin: 0 auto 16px;
+  position: relative;
+}
+
+/* Burst (raios) atrás da polaroid, usando conic-gradient */
+.polaroid::before {
+  content: '';
+  position: absolute;
+  inset: -18px;
+  z-index: -1;
+  background: conic-gradient(from 0deg,
+    rgba(0,0,0,0.06) 0deg,
+    transparent 40deg,
+    rgba(0,0,0,0.04) 80deg,
+    transparent 120deg,
+    rgba(0,0,0,0.05) 160deg,
+    transparent 200deg,
+    rgba(0,0,0,0.04) 240deg,
+    transparent 320deg,
+    rgba(0,0,0,0.06) 360deg
+  );
+  mask: radial-gradient(circle at center, transparent 46%, #000 47%);
+  filter: blur(8px);
+  opacity: .35;
+  animation: burstDrift 12s linear infinite;
+}
+@keyframes burstDrift { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+
+/* Fitas (tapes) nos cantos superiores da polaroid */
+.polaroid::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 8px;
+  width: 42px;
+  height: 10px;
+  background: #f5d36a;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+}
+.polaroid .tape-right {
+  content: '';
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  width: 42px;
+  height: 10px;
+  background: #f5d36a;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+}
+.polaroid-photo {
+  background: #eaeaea;
+  width: 100%;
+  aspect-ratio: 1/1;
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.polaroid-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-light);
+  color: var(--accent-color);
+  font-weight: 800;
+  font-size: 64px;
+}
+.polaroid-caption {
+  margin-top: 8px;
+  font-weight: 700;
+  color: #111;
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing: .3px;
+}
+
+.goal-stats { margin: 8px 0 2px; }
+.chip {
+  display: inline-block;
+  background: #f1f3f5;
+  border: 1px solid #e5e7eb;
+  color: #111;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 6px 10px;
+  border-radius: 0;
+}
+
+.goal-divider {
+  height: 1px;
+  background: #eee;
+  margin: 14px auto 12px;
+  width: 72%;
+}
+
+.goal-title {
+  margin: 6px 0 2px;
+  font-weight: 800;
+  color: #111;
+}
+.goal-subtitle { margin: 0 0 6px; color: #444; }
+.goal-congrats { margin: 0; color: #666; font-size: 0.95rem; }
+
+/* (removido botão de share) */
+
+/* Confete minimalista */
+.confetti-min {
+  position: absolute;
+  top: -12px;
+  width: 6px;
+  height: 10px;
+  animation: confFall 1.6s ease-in forwards;
+}
+@keyframes confFall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(75vh) rotate(300deg); opacity: 0; }
+}
+
+/* Aparecer com drama: subir + fade com delays escalonados */
+.appear-up { opacity: 0; transform: translateY(10px); animation: upIn .5s cubic-bezier(.2,.9,.2,1) forwards; }
+.delay-100 { animation-delay: .10s; }
+.delay-200 { animation-delay: .20s; }
+.delay-300 { animation-delay: .30s; }
+.delay-400 { animation-delay: .40s; }
+.delay-500 { animation-delay: .50s; }
+.delay-600 { animation-delay: .60s; }
+.delay-700 { animation-delay: .70s; }
+
+@keyframes upIn { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: translateY(0) } }
+
 @keyframes celebration-pulse {
   0%, 100% {
     transform: scale(1);
@@ -2223,4 +2461,70 @@ body { background: var(--bg-color); min-height: 100vh; color: var(--on-bg-color)
   to {
     transform: rotate(360deg);
   }
+}
+
+/* =====================
+   Pre-celebration progress
+   ===================== */
+.preprog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  display: grid;
+  place-items: center;
+  z-index: 2000;
+  animation: overlayIn .18s ease-out;
+}
+.preprog-overlay.closing { animation: overlayOut .22s ease-in forwards; }
+
+.preprog-box {
+  background: #0f1115;
+  color: #e6e8ee;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  padding: 20px 22px;
+  width: min(520px, 86vw);
+  transform: translateY(6px);
+  animation: modalRise .22s ease-out forwards;
+}
+.preprog-label {
+  font-size: 14px;
+  letter-spacing: .02em;
+  opacity: .85;
+  margin-bottom: 10px;
+}
+.preprog-bar {
+  --accent: var(--accent-color, #f0b90b);
+  position: relative;
+  height: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.15));
+  border: 1px solid rgba(255,255,255,.1);
+  overflow: hidden;
+}
+.preprog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 84%, #fff 0%), var(--accent));
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.2);
+  transition: width 220ms cubic-bezier(.22,.61,.36,1);
+  position: relative;
+}
+.preprog-fill::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+  mix-blend-mode: screen;
+  transform: translateX(-100%);
+  animation: sheen 1.6s ease-in-out infinite;
+}
+.preprog-percent {
+  margin-top: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  opacity: .8;
+}
+
+@keyframes sheen {
+  0% { transform: translateX(-100%); }
+  60% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
 }

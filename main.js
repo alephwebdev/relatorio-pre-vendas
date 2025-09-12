@@ -2209,88 +2209,165 @@
     renderWeeklyHistory(allHistoryData);
   }
 
-  function triggerCompletionCelebration() {
-    console.log('🎉 Meta completada! Iniciando celebração ÉPICA...');
-    
-    // 1. Criar modal fullscreen de celebração
-    createEpicCelebrationModal();
-    
-    // 2. Adicionar classe de celebração ao container
-    const progressContainer = document.querySelector('.progress-container');
-    progressContainer.classList.add('progress-celebration');
-    
-    // 3. Iniciar efeitos visuais contínuos
-    startContinuousEffects();
-    
-    // 4. Tocar som de celebração melhorado
-    playEpicCompletionSound();
-    
-    // 5. Salvar achievement no Firebase
+  async function triggerCompletionCelebration() {
+    console.log('🎉 Meta completada! Iniciando sequência de progresso...');
+    await showPreCelebrationProgress();
+    createGoalCelebrationModal();
     saveCompletionAchievement();
-    
-    // Os efeitos só param quando o usuário clicar no botão
-    // (não há mais setTimeout automático)
   }
 
-  function createEpicCelebrationModal() {
-    const messages = [
-      'Você conseguiu! 🎯',
-      'Meta conquistada! 🚀',
-      'Excelente trabalho! ⭐',
-      'Parabéns campeão! 🏆',
-      'Sucesso total! 🌟'
-    ];
-    
-    const encouragements = [
-      'Obrigado pelo seu empenho e dedicação!',
-      'Sua determinação fez a diferença!',
-      'Continue assim, você é incrível!',
-      'Seu esforço está dando frutos!',
-      'Você é um verdadeiro profissional!'
-    ];
-    
-    const randomMessage = messages[Math.floor(Math.random() * messages.length)];
-    const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
-    
-    const modalId = `epic-celebration-${uid()}`;
-    const modalHTML = `
-      <div id="${modalId}" class="celebration-modal-overlay">
-        <div class="celebration-modal">
-          <span class="celebration-emoji">�</span>
-          <h1 class="celebration-title">${randomMessage}</h1>
-          <p class="celebration-message">${randomEncouragement}</p>
-          <div class="celebration-stats">
-            <strong>${state.progressData.currentWeekGanhos} de ${state.progressData.target} ganhos conquistados!</strong>
-            <br>
-            <span>Meta semanal 100% concluída! 🎉</span>
+  function showPreCelebrationProgress() {
+    return new Promise((resolve) => {
+      const id = `preprog-${uid()}`;
+      const html = `
+        <div id="${id}" class="preprog-overlay" role="status" aria-live="polite">
+          <div class="preprog-box">
+            <div class="preprog-label">Consolidando resultados</div>
+            <div class="preprog-bar">
+              <div class="preprog-fill" style="width:0%"></div>
+            </div>
+            <div class="preprog-percent">0%</div>
           </div>
-          <button class="celebration-button" onclick="closeCelebrationModal('${modalId}')">
-            Continuar trabalhando! 💪
-          </button>
+        </div>`;
+      document.body.insertAdjacentHTML('beforeend', html);
+      const el = document.getElementById(id);
+      const fill = el.querySelector('.preprog-fill');
+      const pct = el.querySelector('.preprog-percent');
+
+      let value = 0;
+      const steps = [10, 22, 35, 48, 62, 74, 86, 93, 97, 100];
+      let i = 0;
+      const tick = () => {
+        value = steps[i];
+        fill.style.width = value + '%';
+        pct.textContent = value + '%';
+        i++;
+        if (i < steps.length) {
+          setTimeout(tick, i < steps.length - 1 ? 180 : 260);
+        } else {
+          // pequena pausa e fade out
+          setTimeout(() => {
+            el.classList.add('closing');
+            setTimeout(() => { el.remove(); resolve(); }, 220);
+          }, 240);
+        }
+      };
+      setTimeout(tick, 180);
+    });
+  }
+
+  function createGoalCelebrationModal() {
+    const modalId = `goal-modal-${uid()}`;
+    const name = state.account?.name || 'Usuário';
+    const target = state.progressData?.target || 150;
+    const ganhos = state.progressData?.currentWeekGanhos || target;
+    const photoUrl = (state.account && state.account.photoUrl) ? String(state.account.photoUrl).trim() : '';
+
+    // Avatar fallback com iniciais
+    const initials = name.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase();
+    const avatarHtml = photoUrl
+      ? `<img src="${photoUrl}" alt="Foto de ${escapeHtml(name)}" onerror="this.style.display='none'; this.parentElement.querySelector('.avatar-fallback').style.display='flex';"/>`
+      : '';
+
+    const modalHTML = `
+      <div id="${modalId}" class="goal-modal-overlay" role="dialog" aria-modal="true">
+        <div class="goal-modal" role="document">
+          <div class="goal-topbar"></div>
+          <button class="goal-close-btn" aria-label="Fechar" title="Fechar">&times;</button>
+          <div class="goal-content">
+            <div class="goal-badge appear-up delay-100"><i class="bi bi-trophy-fill"></i><span>Meta batida</span></div>
+            <div class="polaroid appear-up delay-200">
+              <div class="polaroid-photo">
+                ${avatarHtml}
+                <div class="avatar-fallback" ${photoUrl?"style='display:none'":''}>${initials}</div>
+              </div>
+              <div class="polaroid-caption">${escapeHtml(name)}</div>
+            </div>
+            <div class="goal-stats appear-up delay-300"><span class="chip">${ganhos} de ${target} ganhos</span></div>
+            <div class="goal-divider appear-up delay-400"></div>
+            <h2 class="goal-title appear-up delay-500">Parabéns!</h2>
+            <p class="goal-subtitle appear-up delay-600">Você alcançou sua meta semanal.</p>
+            <p class="goal-congrats appear-up delay-700">Parabéns pelo excelente trabalho! Continue assim.</p>
+          </div>
+          <div class="corner-bl"></div>
+          <div class="corner-br"></div>
         </div>
-      </div>
-    `;
-    
+      </div>`;
+
     document.body.insertAdjacentHTML('beforeend', modalHTML);
-    
-    // Remover auto-close - só fecha quando clicar no botão
-    // setTimeout(() => {
-    //   closeCelebrationModal(modalId);
-    // }, 8000);
+
+    const overlay = document.getElementById(modalId);
+    const closeBtn = overlay.querySelector('.goal-close-btn');
+    const close = () => { overlay.classList.add('closing'); setTimeout(()=>overlay.remove(), 200); };
+    // Fechar no X
+    closeBtn.addEventListener('click', close);
+    // Fechar ao clicar fora
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+    // Fechar com ESC
+    document.addEventListener('keydown', function onKey(e){ if(e.key === 'Escape'){ close(); document.removeEventListener('keydown', onKey);} });
+
+    // Confete minimalista: poucas peças, uma vez só
+    try {
+      const colors = ['#111', '#888', '#bbb', '#0f0', '#0a0'];
+      for (let i = 0; i < 18; i++) {
+        const conf = document.createElement('div');
+        conf.className = 'confetti-min';
+        conf.style.left = Math.random()*100 + '%';
+        conf.style.backgroundColor = colors[i % colors.length];
+        conf.style.animationDelay = (Math.random()*0.3) + 's';
+        overlay.appendChild(conf);
+        setTimeout(()=> conf.remove(), 1800);
+      }
+    } catch (_) {}
+
+    // Musiquinha de conquista: chime curto e suave
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.15, now);
+      master.connect(ctx.destination);
+
+      const notes = [
+        { f: 784, t: 0.00, d: 0.15 }, // G5
+        { f: 988, t: 0.12, d: 0.18 }, // B5
+        { f: 1175, t: 0.26, d: 0.22 }, // D6
+        { f: 1568, t: 0.45, d: 0.25 }, // G6
+      ];
+      notes.forEach(n => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(n.f, now + n.t);
+        g.gain.setValueAtTime(0.0, now + n.t);
+        g.gain.linearRampToValueAtTime(0.6, now + n.t + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.001, now + n.t + n.d);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(now + n.t);
+        osc.stop(now + n.t + n.d + 0.02);
+      });
+
+      // Sparkle (ruído leve) no final
+      const noiseDur = 0.12;
+      const buffer = ctx.createBuffer(1, ctx.sampleRate * noiseDur, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random()*2-1) * 0.05;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const nf = ctx.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 1500;
+      const ng = ctx.createGain(); ng.gain.value = 0.12;
+      src.connect(nf); nf.connect(ng); ng.connect(master);
+      src.start(now + 0.55);
+      src.stop(now + 0.55 + noiseDur);
+    } catch (_) { /* áudio opcional */ }
   }
   
-  // Função global para fechar o modal E parar todos os efeitos
+  // Não usamos mais o modal antigo com efeitos; mantido para compatibilidade
   window.closeCelebrationModal = function(modalId) {
     const modal = document.getElementById(modalId);
-    if (modal) {
-      modal.style.animation = 'celebration-overlay-fadein 0.3s ease-out reverse';
-      setTimeout(() => {
-        modal.remove();
-      }, 300);
-    }
-    
-    // Parar todos os efeitos quando fechar o modal
-    stopAllCelebrationEffects();
+    if (modal) modal.remove();
   }
 
   // Variáveis para controlar os efeitos contínuos
@@ -2298,21 +2375,8 @@
   let celebrationTimeouts = [];
 
   function startContinuousEffects() {
-    // Limpar efeitos anteriores se existirem
-    stopAllCelebrationEffects();
-    
-    // Adicionar classe de celebração ao container
-    const progressContainer = document.querySelector('.progress-container');
-    progressContainer.classList.add('progress-celebration');
-    
-    // Iniciar confetti contínuo
-    startContinuousConfetti();
-    
-    // Iniciar fogos de artifício contínuos
-    startContinuousFireworks();
-    
-    // Iniciar estrelas cadentes contínuas
-    startContinuousShootingStars();
+    // Efeitos desativados na nova versão da celebração
+    return;
   }
 
   function startContinuousConfetti() {
@@ -2463,73 +2527,8 @@
   }
 
   function playEpicCompletionSound() {
-    // Tentar tocar uma melodia épica de celebração
-    try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      
-      // Melodia de vitória mais elaborada - "Ta-da!" épico
-      const melody = [
-        { freq: 523.25, duration: 0.3, delay: 0 },     // C5
-        { freq: 659.25, duration: 0.3, delay: 150 },   // E5
-        { freq: 783.99, duration: 0.4, delay: 300 },   // G5
-        { freq: 1046.50, duration: 0.8, delay: 500 },  // C6 (longo)
-        
-        // Segunda parte - fanfarra
-        { freq: 1318.51, duration: 0.2, delay: 1300 }, // E6
-        { freq: 1174.66, duration: 0.2, delay: 1450 }, // D6
-        { freq: 1046.50, duration: 0.6, delay: 1600 }, // C6 (final)
-      ];
-      
-      melody.forEach(note => {
-        setTimeout(() => {
-          const oscillator = audioContext.createOscillator();
-          const gainNode = audioContext.createGain();
-          
-          oscillator.connect(gainNode);
-          gainNode.connect(audioContext.destination);
-          
-          oscillator.frequency.setValueAtTime(note.freq, audioContext.currentTime);
-          oscillator.type = 'sine';
-          
-          gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
-          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + note.duration);
-          
-          oscillator.start(audioContext.currentTime);
-          oscillator.stop(audioContext.currentTime + note.duration);
-        }, note.delay);
-      });
-      
-      // Adicionar efeito de "explosão" sonora no final
-      setTimeout(() => {
-        const whiteNoise = audioContext.createBufferSource();
-        const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.1, audioContext.sampleRate);
-        const channelData = buffer.getChannelData(0);
-        
-        for (let i = 0; i < channelData.length; i++) {
-          channelData[i] = (Math.random() * 2 - 1) * 0.1;
-        }
-        
-        whiteNoise.buffer = buffer;
-        
-        const filterNode = audioContext.createBiquadFilter();
-        filterNode.type = 'lowpass';
-        filterNode.frequency.setValueAtTime(2000, audioContext.currentTime);
-        
-        const explosionGain = audioContext.createGain();
-        explosionGain.gain.setValueAtTime(0.3, audioContext.currentTime);
-        explosionGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-        
-        whiteNoise.connect(filterNode);
-        filterNode.connect(explosionGain);
-        explosionGain.connect(audioContext.destination);
-        
-        whiteNoise.start(audioContext.currentTime);
-        whiteNoise.stop(audioContext.currentTime + 0.1);
-      }, 2000);
-      
-    } catch (error) {
-      console.log('Audio não disponível:', error);
-    }
+    // Áudio desativado para uma experiência mais discreta
+    return;
   }
 
   async function saveCompletionAchievement() {
