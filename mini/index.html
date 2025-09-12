@@ -16,23 +16,24 @@
   <link rel="stylesheet" href="../styles.css" />
   <style>
     /* Compact adjustments for mini version */
-  body { padding: 8px; }
+  body { padding: 0; overflow-x: hidden; }
     .login-card { max-width: 380px; }
   .config-card, .products-card { margin-bottom: .5rem; }
   /* 2 colunas super compactas */
   .products-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
   .navbar { padding: .2rem .4rem; }
   .btn-action { padding: .3rem .5rem; font-size: .75rem; }
-  /* Garantir que nada extrapole a largura e limitar a altura visível a 800px */
-  #app { max-height: 800px; overflow-y: auto; overflow-x: hidden; }
+  /* Garantir que nada extrapole a largura e evitar scroll interno */
+  #app { max-height: none; overflow: visible; }
   #app * { min-width: 0; }
     /* Remover sombras e bordas arredondadas para tudo dentro do app */
   #app *, #app .card, #app .modal-content { box-shadow: none !important; border-radius: 0 !important; }
   .progress, .progress-bar { border-radius: 0 !important; box-shadow: none !important; }
     /* Divisor simples */
     .mini-divider { height: 8px; border-top: 1px solid var(--border-color); margin: .25rem 0 .5rem; }
-    /* Tipografia mais compacta */
-  #app .btn, #app .form-control, #app label, #app .badge, #app .modal, #app .card, #app .nav, #app .navbar { font-size: .78rem; }
+  /* Tipografia mais compacta e alinhada à esquerda */
+  #app { text-align: left; }
+  #app .btn, #app .form-control, #app label, #app .badge, #app .modal, #app .card, #app .nav, #app .navbar { font-size: .74rem; }
   #app .small, #app small { font-size: .7rem; }
   /* Progresso com mais respiro */
   .progress-container { padding: 1rem; }
@@ -361,8 +362,12 @@
       const btn = document.getElementById('toggle-mini-btn');
       function notifyHeight(){
         try {
-          // Clampar a altura enviada para no máximo 800px
-          const h = Math.min(800, document.body.scrollHeight);
+          // Altura real do documento (considerando conteúdos dinâmicos)
+          const h = Math.max(
+            document.documentElement.scrollHeight,
+            document.body.scrollHeight,
+            document.documentElement.offsetHeight
+          );
           parent.postMessage({ type: 'rpv-mini-resize', height: h }, '*');
         } catch(_){}
       }
@@ -376,7 +381,7 @@
           setTimeout(notifyHeight, 50);
         });
       }
-      window.addEventListener('load', ()=> setTimeout(notifyHeight, 100));
+  window.addEventListener('load', ()=> setTimeout(notifyHeight, 120));
     })();
   </script>
 </body>

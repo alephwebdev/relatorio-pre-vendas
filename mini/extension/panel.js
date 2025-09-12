@@ -7,7 +7,7 @@
 
   const style = document.createElement('style');
   style.textContent = `
-    #rpv-mini-fab { position: fixed; top: 10px; right: 10px; z-index: 2147483647; pointer-events: none; }
+  #rpv-mini-fab { position: fixed; top: 10px; right: 10px; z-index: 2147483647; pointer-events: none; }
     #rpv-mini-card { width: 360px; background: #ffffff; border-radius: 0; box-shadow: none; overflow: hidden; pointer-events: auto; border: 1px solid rgba(0,0,0,.2); }
     #rpv-mini-iframe { width: 100%; border: 0; display: block; height: 460px; }
     #rpv-mini-drag { cursor: move; background: #f5f5f5; border-bottom: 1px solid rgba(0,0,0,.2); height: 8px; }
@@ -35,10 +35,9 @@
     try {
       const data = e.data || {};
       if (data && data.type === 'rpv-mini-resize' && typeof data.height === 'number') {
-  // Limitar altura para 800px e também ao viewport para não estourar a tela
-  const maxViewport = Math.max(120, (window.innerHeight || 800) - 20);
-  const maxAllowed = Math.min(800, maxViewport);
-  const h = Math.max(80, Math.min(maxAllowed, data.height));
+        // Ajuste a altura exatamente ao conteúdo, mas nunca maior que o viewport menos margens
+        const maxViewport = Math.max(120, (window.innerHeight || 800) - 24);
+        const h = Math.max(80, Math.min(maxViewport, data.height));
         iframe.style.height = h + 'px';
       }
     } catch (_) {}
