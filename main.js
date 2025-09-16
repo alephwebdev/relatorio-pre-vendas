@@ -1246,7 +1246,7 @@
           
           // Salvar dados da semana anterior no histórico
           if (data.currentWeekGanhos > 0) {
-            await saveWeekToHistory(data);
+            await saveWeekToHistoryUserScoped(data);
             console.log('💾 Dados da semana anterior salvos no histórico');
           }
           
@@ -1381,8 +1381,8 @@
     console.log('🔄 Resetando progresso semanal...');
     console.log('📅 Nova semana:', currentWeek);
     
-    // Salvar dados da semana anterior no histórico se houver
-    if (state.progressData.weekStart && state.progressData.currentWeekGanhos > 0) {
+    // Salvar dados da semana anterior no histórico (mesmo com 0 ganhos)
+    if (state.progressData.weekStart) {
       try {
         const weeklyHistoryData = {
           weekStart: state.progressData.weekStart,
@@ -1399,6 +1399,8 @@
         console.log('💾 Salvando histórico da semana anterior:', weeklyHistoryData);
         
         await weeklyGanhosDoc(state.account.id, state.progressData.weekStart).set(weeklyHistoryData);
+        // Também salvar no formato unificado
+        await saveWeekToHistoryUserScoped(weeklyHistoryData);
         console.log('✅ Histórico da semana anterior salvo');
         
       } catch (error) {
@@ -1635,7 +1637,9 @@
   // Função para salvar semana anterior no histórico
   async function saveWeekToHistory(weekData) {
     try {
-      const historyRef = db.collection('weekly-history').doc();
+      // Doc ID determinístico: accountId_weekStart
+      const docId = `${state.account.id}_${formatDateKey(weekData.weekStart)}`;
+      const historyRef = db.collection('weekly-history').doc(docId);
       const historyData = {
         accountId: state.account.id,
         accountName: state.account.name,
@@ -1648,8 +1652,8 @@
         savedAt: new Date().toISOString(),
         weekNumber: getWeekNumber(new Date(weekData.weekStart))
       };
-      
-      await historyRef.set(historyData);
+      // Merge para evitar sobrescrever campos existentes
+      await historyRef.set(historyData, { merge: true });
       console.log('📚 Semana salva no histórico:', historyData);
       
     } catch (error) {
@@ -1874,33 +1878,148 @@
 
   async function loadWeeklyHistory() {
     console.log('📚 Carregando histórico de metas semanais...');
-    
+
+    if (!state.account) {
+      showError('Nenhuma conta selecionada. Faça login novamente.');
+      renderEmptyHistory();
+      return;
+    }
+
     try {
-      // Buscar dados do histórico semanal (aumentar limite para mais dados)
-      const historyRef = db.collection('users').doc(state.currentUserId).collection('weekly-history');
-      const snapshot = await historyRef.orderBy('weekStart', 'desc').limit(100).get();
-      
-      const historyData = [];
-      snapshot.forEach(doc => {
+      const accountId = state.account.id;
+
+      // 1) Buscar na coleção principal 'weekly-history' filtrando por accountId
+      //    (não depende de state.currentUserId e funciona para todos os anos/meses)
+      const mainHistoryRef = db.collection('weekly-history').where('accountId', '==', accountId);
+  const mainSnap = await mainHistoryRef.get();
+  console.log('🗃️ weekly-history (by accountId) docs:', mainSnap.size);
+
+      const historyMap = new Map(); // chave: weekStart -> obj unificado
+      const mainKeys = new Set();
+      mainSnap.forEach(doc => {
         const data = doc.data();
-        historyData.push({
-          id: doc.id,
-          ...data
+        const key = formatDateKey(data.weekStart);
+        mainKeys.add(key);
+        historyMap.set(key, {
+          id: key,
+          weekStart: data.weekStart,
+          weekEnd: data.weekEnd,
+          totalGanhos: data.totalGanhos ?? data.ganhos ?? 0,
+          target: data.target ?? 150,
+          status: data.status ?? getWeekStatus((data.totalGanhos ?? data.ganhos ?? 0), (data.target ?? 150)),
+          lastUpdated: data.lastUpdated ?? data.savedAt ?? null
         });
       });
-      
-      // Adicionar semana atual se não estiver no histórico
+
+      // 1b) Fallback por nome (para registros antigos que não tinham accountId)
+      try {
+        const nameHistoryRef = db.collection('weekly-history').where('accountName', '==', state.account.name);
+  const nameSnap = await nameHistoryRef.get();
+  console.log('🗃️ weekly-history (by accountName) docs:', nameSnap.size);
+        nameSnap.forEach(doc => {
+          const data = doc.data();
+          const key = formatDateKey(data.weekStart);
+          if (!historyMap.has(key)) {
+            historyMap.set(key, {
+              id: key,
+              weekStart: data.weekStart,
+              weekEnd: data.weekEnd,
+              totalGanhos: data.totalGanhos ?? data.ganhos ?? 0,
+              target: data.target ?? 150,
+              status: data.status ?? getWeekStatus((data.totalGanhos ?? data.ganhos ?? 0), (data.target ?? 150)),
+              lastUpdated: data.lastUpdated ?? data.savedAt ?? null
+            });
+          }
+        });
+      } catch (nameErr) {
+        console.warn('⚠️ Falha ao buscar histórico por accountName:', nameErr);
+      }
+
+      // 2) Fallback: também coletar documentos legacy de 'weekly-ganhos/{accountId}/weeks'
+      try {
+        const legacyRef = db.collection('weekly-ganhos').doc(accountId).collection('weeks');
+  const legacySnap = await legacyRef.get();
+  console.log('🗃️ weekly-ganhos legacy docs:', legacySnap.size);
+        const legacyToPersist = [];
+        legacySnap.forEach(doc => {
+          const d = doc.data();
+          const key = formatDateKey(d.weekStart);
+          if (!historyMap.has(key)) {
+            historyMap.set(key, {
+              id: key,
+              weekStart: d.weekStart,
+              weekEnd: d.weekEnd,
+              totalGanhos: d.ganhos ?? 0,
+              target: d.target ?? 150,
+              status: d.achieved ? 'completed' : 'not-achieved',
+              lastUpdated: d.completedDate ?? d.completedAt ?? null
+            });
+            // Agendar persistência no repositório unificado (ainda não existe em weekly-history)
+            if (!mainKeys.has(key)) {
+              legacyToPersist.push({
+                weekStart: d.weekStart,
+                weekEnd: d.weekEnd,
+                currentWeekGanhos: d.ganhos ?? 0,
+                target: d.target ?? 150,
+                dailyGanhos: {}
+              });
+            }
+          }
+        });
+        // Persistir legacy no formato unificado (best-effort)
+        for (const item of legacyToPersist) {
+          try { await saveWeekToHistory(item); } catch (e) { console.warn('⚠️ Falha ao backfill legacy para weekly-history:', e); }
+        }
+      } catch (legacyErr) {
+        console.warn('⚠️ Falha ao buscar histórico legacy (weekly-ganhos):', legacyErr);
+      }
+
+      // 2b) Legacy alternativo: 'users/{accountId}/weekly-history'
+      try {
+        const userScopedRef = db.collection('users').doc(accountId).collection('weekly-history');
+  const userSnap = await userScopedRef.get();
+  console.log('🗃️ users/{accountId}/weekly-history legacy docs:', userSnap.size);
+        const toPersist = [];
+        userSnap.forEach(doc => {
+          const d = doc.data();
+          const key = formatDateKey(d.weekStart || doc.id);
+          if (!historyMap.has(key)) {
+            const total = d.totalGanhos ?? d.ganhos ?? 0;
+            historyMap.set(key, {
+              id: key,
+              weekStart: d.weekStart,
+              weekEnd: d.weekEnd,
+              totalGanhos: total,
+              target: d.target ?? 150,
+              status: d.status ?? getWeekStatus(total, d.target ?? 150),
+              lastUpdated: d.lastUpdated ?? d.createdAt ?? null
+            });
+            if (!mainKeys.has(key)) {
+              toPersist.push({
+                weekStart: d.weekStart,
+                weekEnd: d.weekEnd,
+                currentWeekGanhos: total,
+                target: d.target ?? 150,
+                dailyGanhos: {}
+              });
+            }
+          }
+        });
+        for (const item of toPersist) {
+          try { await saveWeekToHistory(item); } catch (e) { console.warn('⚠️ Falha ao backfill (users/*/weekly-history):', e); }
+        }
+      } catch (userLegacyErr) {
+        console.warn('⚠️ Falha ao buscar histórico legacy em users/{accountId}/weekly-history:', userLegacyErr);
+      }
+
+      // 3) Incluir semana atual se não existir ainda
       const currentWeek = getWeekDates();
-      const currentWeekKey = formatDateKey(currentWeek.start);
-      const hasCurrentWeek = historyData.some(week => week.id === currentWeekKey);
-      
-      if (!hasCurrentWeek) {
-        // Pegar dados atuais do DOM
+      const currentKey = formatDateKey(currentWeek.start);
+      if (!historyMap.has(currentKey)) {
         const currentGanhosEl = document.getElementById('current-ganhos');
         const currentGanhos = parseInt(currentGanhosEl?.textContent || '0');
-        
-        const currentWeekData = {
-          id: currentWeekKey,
+        historyMap.set(currentKey, {
+          id: currentKey,
           weekStart: currentWeek.start,
           weekEnd: currentWeek.end,
           totalGanhos: currentGanhos,
@@ -1908,22 +2027,32 @@
           isCurrentWeek: true,
           status: getWeekStatus(currentGanhos, 150),
           lastUpdated: new Date().toISOString()
-        };
-        historyData.unshift(currentWeekData);
-        
-        // Salvar semana atual no Firebase para futuras consultas
-        await saveWeekToHistory(currentWeekData);
+        });
+
+        // Persistir no histórico principal para consultas futuras
+        await saveWeekToHistory({
+          weekStart: currentWeek.start,
+          weekEnd: currentWeek.end,
+          currentWeekGanhos: currentGanhos,
+          target: 150
+        });
+      } else {
+        // Marcar no objeto renderizado quando for a semana atual
+        const cur = historyMap.get(currentKey);
+        cur.isCurrentWeek = true;
+        historyMap.set(currentKey, cur);
       }
-      
-      // Armazenar dados globalmente para filtros
+
+      // 4) Converter para array, ordenar por semana (desc)
+      const historyData = Array.from(historyMap.values()).sort((a, b) => (
+        (b.weekStart || '').localeCompare(a.weekStart || '')
+      ));
+
+      // Guardar globalmente para filtros
       allHistoryData = historyData;
-      
-      // Configurar anos disponíveis no filtro
       setupYearFilter(historyData);
-      
-      // Renderizar todos os dados inicialmente
       renderWeeklyHistory(historyData);
-      
+
     } catch (error) {
       console.error('❌ Erro ao carregar histórico semanal:', error);
       showError('Erro ao carregar histórico de metas. Tente novamente.');
@@ -2106,22 +2235,18 @@
     return `${year} - ${month} - S${weekOfMonth}`;
   }
 
-  async function saveWeekToHistory(weekData) {
+  async function saveWeekToHistoryUserScoped(weekData) {
+    // Wrapper legacy: delega para a função principal que salva em 'weekly-history' com accountId
     try {
-      console.log('💾 Salvando semana no histórico:', weekData.id);
-      const historyRef = db.collection('users').doc(state.currentUserId).collection('weekly-history');
-      await historyRef.doc(weekData.id).set({
+      await saveWeekToHistory({
         weekStart: weekData.weekStart,
         weekEnd: weekData.weekEnd,
-        totalGanhos: weekData.totalGanhos,
-        target: weekData.target,
-        status: weekData.status,
-        lastUpdated: weekData.lastUpdated,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      console.log('✅ Semana salva no histórico com sucesso');
+        currentWeekGanhos: weekData.totalGanhos ?? weekData.currentWeekGanhos ?? 0,
+        target: weekData.target ?? 150,
+        dailyGanhos: weekData.dailyGanhos ?? {}
+      });
     } catch (error) {
-      console.error('❌ Erro ao salvar semana no histórico:', error);
+      console.error('❌ Erro no wrapper legacy de salvar histórico:', error);
     }
   }
 
@@ -2130,17 +2255,14 @@
       const currentWeek = getWeekDates();
       const currentWeekKey = formatDateKey(currentWeek.start);
       
-      const weekData = {
-        id: currentWeekKey,
+      // Persistir no formato unificado (coleção 'weekly-history')
+      await saveWeekToHistory({
         weekStart: currentWeek.start,
         weekEnd: currentWeek.end,
-        totalGanhos: ganhos,
+        currentWeekGanhos: ganhos,
         target: 150,
-        status: getWeekStatus(ganhos, 150),
-        lastUpdated: new Date().toISOString()
-      };
-      
-      await saveWeekToHistory(weekData);
+        dailyGanhos: {}
+      });
     } catch (error) {
       console.error('❌ Erro ao salvar semana atual no histórico:', error);
     }
