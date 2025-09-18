@@ -542,6 +542,19 @@
     productsGrid.addEventListener('input', handleProductValueChange);
   }
 
+  function updateSteelFrameTotal() {
+    const steelFrameProducts = ['Glasroc X', 'Placa Cimentícia', 'Painel wall', 'Perfis de Steel Frame'];
+    const total = steelFrameProducts.reduce((sum, productName) => {
+      const product = state.products.find(p => p.name === productName);
+      return sum + (product ? product.value : 0);
+    }, 0);
+    
+    const totalSteelProduct = state.products.find(p => p.name === 'TOTAL STEEL FRAME PRODUTOS');
+    if (totalSteelProduct) {
+      totalSteelProduct.value = total;
+    }
+  }
+
   function handleProductActions(e) {
     const productId = e.target.closest('[data-product-id]')?.dataset.productId;
     if (!productId) return;
@@ -551,10 +564,24 @@
 
     if (e.target.closest('.incr-product')) {
       product.value += 1;
+      
+      // Atualizar TOTAL STEEL FRAME PRODUTOS se for um dos produtos específicos
+      const steelFrameProducts = ['Glasroc X', 'Placa Cimentícia', 'Painel wall', 'Perfis de Steel Frame'];
+      if (steelFrameProducts.includes(product.name)) {
+        updateSteelFrameTotal();
+      }
+      
       saveDailyDebounced();
       renderProducts();
     } else if (e.target.closest('.decr-product')) {
       product.value = Math.max(0, product.value - 1);
+      
+      // Atualizar TOTAL STEEL FRAME PRODUTOS se for um dos produtos específicos
+      const steelFrameProducts = ['Glasroc X', 'Placa Cimentícia', 'Painel wall', 'Perfis de Steel Frame'];
+      if (steelFrameProducts.includes(product.name)) {
+        updateSteelFrameTotal();
+      }
+      
       saveDailyDebounced();
       renderProducts();
     } else if (e.target.closest('.remove-product')) {
@@ -574,6 +601,13 @@
     if (!product) return;
 
     product.value = Math.max(0, parseInt(e.target.value) || 0);
+    
+    // Atualizar TOTAL STEEL FRAME PRODUTOS se for um dos produtos específicos
+    const steelFrameProducts = ['Glasroc X', 'Placa Cimentícia', 'Painel wall', 'Perfis de Steel Frame'];
+    if (steelFrameProducts.includes(product.name)) {
+      updateSteelFrameTotal();
+    }
+    
     saveDailyDebounced();
   }
 
@@ -2756,7 +2790,9 @@
     if (products && products.length > 0) {
       // ordenar conforme estrutura global atual, se houver
       const order = new Map((state.productStructure||[]).map((p,i)=>[p.name,i]));
-      const sorted = [...products].sort((a,b)=> (order.get(a.name)??999) - (order.get(b.name)??999));
+      const sorted = [...products]
+        .filter(produto => produto.name !== 'TOTAL STEEL FRAME PRODUTOS' && produto.name !== 'MEGA SALDÃO DE FORROS') // Filtrar itens com seções específicas para não duplicar
+        .sort((a,b)=> (order.get(a.name)??999) - (order.get(b.name)??999));
       sorted.forEach(produto => {
         const valor = produto.value > 0 ? produto.value : '-';
         parts.push(`${produto.name}: ${valor}`);
