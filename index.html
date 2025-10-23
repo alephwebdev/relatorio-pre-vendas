@@ -23,6 +23,55 @@
                 }
             };
         </script>
+        <script>
+            // Handler para disparar webhook que puxa leads sem aguardar retorno
+            // Usa padrão que evita préflight CORS: try sendBeacon (sem custom headers),
+            // e fallback para uma requisição GET via Image (sem headers).
+            document.addEventListener('DOMContentLoaded', function () {
+                const WEBHOOK_URL = 'https://n8n.unitycompany.com.br/webhook/feira-construnordeste';
+                const btn = document.getElementById('pull-leads-btn');
+
+                if (!btn) return;
+
+                function fireBeacon() {
+                    try {
+                        if (navigator && typeof navigator.sendBeacon === 'function') {
+                            // enviar sem definir Content-Type personalizado para evitar preflight
+                            // sendBeacon aceita um body; passar uma empty string para enviar algo mínimo
+                            return navigator.sendBeacon(WEBHOOK_URL, '');
+                        }
+                    } catch (e) {
+                        console.warn('sendBeacon falhou:', e);
+                    }
+                    return false;
+                }
+
+                function fireViaImage() {
+                    try {
+                        const img = new Image();
+                        // anexar query params para evitar cache e enviar dados mínimos
+                        img.src = WEBHOOK_URL + '?_=' + Date.now() + '&action=pull_leads';
+                        // não adicionar ao DOM; apenas criar o objeto dispara a requisição
+                        return true;
+                    } catch (e) {
+                        console.warn('Image fallback falhou:', e);
+                        return false;
+                    }
+                }
+
+                btn.addEventListener('click', function () {
+                    // Primeiro tente sendBeacon (sem cabeçalhos extras)
+                    const ok = fireBeacon();
+                    if (!ok) {
+                        // Fallback que evita CORS préflight
+                        fireViaImage();
+                    }
+
+                    // Mostrar apenas um alert de sucesso imediato (fire-and-forget)
+                    try { alert('Leads puxados com sucesso'); } catch (e) {}
+                });
+            });
+        </script>
         <!-- Custom styles -->
         <link rel="stylesheet" href="./styles.css" />
     </head>
@@ -183,6 +232,10 @@
                                         </button>
                                         <button id="weekly-history-btn" class="btn btn-sm btn-outline-primary" title="Ver histórico de metas semanais">
                                             <i class="bi bi-calendar-week"></i>
+                                        </button>
+                                        <!-- Botão para disparar webhook que puxa leads -->
+                                        <button id="pull-leads-btn" class="btn btn-sm btn-outline-success" title="Puxar leads (n8n)">
+                                            <i class="bi bi-cloud-arrow-down"></i>
                                         </button>
                                     </div>
                                 </div>
